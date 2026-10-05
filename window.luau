@@ -5,9 +5,12 @@
 -- the action by name; nothing here depends on them.
 
 local util = require("./lib/util")
+local link = require("./lib/link")
 
 local KIND = "branch-changes.view"
 local KV_PANES = "panes" -- written by host.luau: pane id -> worktree root
+local DIFF_KIND = "branch-changes.diff"
+local KV_DIFF_PANES = "diff_panes" -- written by lib/diff_block.luau: pane id -> link key
 
 local function same_dir(a: string?, b: string?): boolean
 	if a == nil or b == nil or a == "" or b == "" then
@@ -81,3 +84,22 @@ tern.command({
 		end)
 	end,
 })
+
+-- `tern-branch-changes://diff?…`, followed by the list block's `cx:open`:
+-- focus the diff block already showing that file, else open one beside.
+tern.route.link(function(req, cx)
+	local target = link.decode(req.url)
+	if target == nil then
+		return nil
+	end
+	local key = link.key(target)
+	local ok, map = pcall(tern.kv.get, KV_DIFF_PANES)
+	local known: { [string]: string } = if ok and type(map) == "table" then map else {}
+	for _, p in cx.session:panes() do
+		if p.block == DIFF_KIND and known[tostring(p.pane)] == key then
+			cx.layout:focus(p.pane)
+			return { handled = true }
+		end
+	end
+	return { block = DIFF_KIND, args = link.to_args(target) }
+end)

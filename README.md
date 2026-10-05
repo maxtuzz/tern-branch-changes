@@ -36,7 +36,7 @@ Changes 5
 Commits 3  since origin/dev
   ▸ fix login redirect   a1b2c3d   Ada · 2h   unpushed
   ▸ …
-Updated 14:02   [enter] diff  [o] open  [r] refresh  [b] base
+Updated 14:02   [enter] inline diff  [o] open diff  [e] edit  [r] refresh  [b] base
 ```
 
 - **Header:** the branch name is the title. Unpushed, behind, changed and branch-total counts are badge chips, and the base refs are clickable chips.
@@ -47,12 +47,19 @@ Updated 14:02   [enter] diff  [o] open  [r] refresh  [b] base
 | Key / gesture | Action |
 |---|---|
 | `j` / `k`, ↓ / ↑, `g` / `G` | Move the selection |
-| `enter` / `space`, click | File: toggle its inline diff. Commit: expand it (files load lazily) |
-| `o`, ⌥-click or ⌘-click, double-click | Open the file in a Tern file block |
+| click, `enter` / `space` | File: toggle its diff inline, under the row. Commit: expand it (files load lazily) |
+| double-click, `o` | Open the file's diff in its own **File diff** block beside this one. If that diff is already open, focus it. Works for deleted files too |
+| `e`, ⌥-click or ⌘-click | Edit the worktree file in a Tern file block. For a deleted file it explains that and suggests `o` instead |
 | `y` | Copy the selected path or commit SHA |
 | `r` | Refresh |
 | `b` / `B`, click a base badge | Cycle the base ref |
-| `escape` | Close all open diffs |
+| `escape` | Close all inline diffs |
+
+### File diff block
+
+`branch-changes.diff` shows one file's patch full-pane with Tern's own `ui.diff` renderer. Its args are `{ root, kind, path, sha?, orig? }`, where kind is staged, unstaged, untracked or commit. Press `r` to reload; `e` edits the file when it still exists. Working-tree diffs reload on their own when a shell command finishes under the root.
+
+A host block can't create blocks itself, so the list follows a `tern-branch-changes://diff?root=…&kind=…&path=…&sha=…` link with `cx:open`. `window.luau`'s `tern.route.link` turns that link into the block, or focuses the open block for the same root, kind, SHA and path.
 
 The block refreshes on its own:
 
@@ -95,7 +102,8 @@ Optional `.tern/branch-changes.json` in the worktree root. It's re-read on every
 ## How it works
 
 - `host.luau` defines the block. All git runs on the host through async `tern.process.run` with `--no-optional-locks`, `GIT_OPTIONAL_LOCKS=0`, `-z` porcelain output and timeouts. The block never takes the index lock away from your own git. (`cx.git` is window-only, so it can't be used here.)
-- `window.luau` registers the command. It resolves the focused pane's worktree root, then focuses an existing block for that root or splits a new one to the right.
+- `lib/diff_block.luau` defines the full-pane File diff block, and `lib/link.luau` encodes the links that open it.
+- `window.luau` registers the command and the `tern-branch-changes://` link route. The command resolves the focused pane's worktree root, then focuses an existing block for that root or splits a new one to the right.
 - `lib/` holds the parsers (`parse`), config validation (`config`), git calls (`git`), state and keyboard rows (`model`) and the view (`view`).
 
 Programs it runs: `git` only.

@@ -18,7 +18,7 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FILES = [
     "lib/util.luau", "lib/parse.luau", "lib/config.luau", "lib/git.luau",
-    "lib/model.luau", "lib/view.luau", "host.luau", "window.luau",
+    "lib/model.luau", "lib/view.luau", "lib/link.luau", "lib/diff_block.luau", "host.luau", "window.luau",
     "tests/fixtures.luau", "tests/stub.luau", "tests/run.luau",
 ]
 REQUIRE = re.compile(r'require\("([^"]+)"\)')

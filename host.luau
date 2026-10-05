@@ -2,12 +2,16 @@
 -- Block `branch-changes.view`: what this branch changed. Uncommitted work on
 -- top, merge-base(base)..HEAD commits below, inline diffs on click.
 -- Args: { worktree_root } (any directory inside the worktree works).
+-- Also defines `branch-changes.diff` (lib/diff_block.luau), the full-pane diff
+-- that `o` and double-click open.
 
 local config = require("./lib/config")
 local git = require("./lib/git")
 local model = require("./lib/model")
 local view = require("./lib/view")
 local util = require("./lib/util")
+local link = require("./lib/link")
+local diff_block = require("./lib/diff_block")
 
 local DEBOUNCE_MS = 500
 local POLL_MS = 12000
@@ -200,7 +204,8 @@ local function toggle_commit(b: Block, sha: string, open: boolean?)
 	end
 end
 
-local function open_file(b: Block, row: model.Row)
+-- Edits the worktree file (`e`, ⌥/⌘-click). A deleted file has nothing to edit.
+local function edit_file(b: Block, row: model.Row)
 	local root, target = b.state.root, row.target
 	if not root or not target then
 		return
@@ -209,8 +214,24 @@ local function open_file(b: Block, row: model.Row)
 	if tern.fs.exists(abs) then
 		b.cx:open(abs)
 	else
-		b.cx:toast("info", "Not in the worktree", target.path)
+		b.cx:toast("info", "Deleted in the worktree", target.path .. " · press o to view its diff")
 	end
+end
+
+-- Opens the file's diff in its own `branch-changes.diff` block (`o`, double-click).
+-- A host block can't create blocks, so it follows a link window.luau routes.
+local function open_diff(b: Block, row: model.Row)
+	local root, target = b.state.root, row.target
+	if not root or not target then
+		return
+	end
+	b.cx:open(link.encode({
+		root = root,
+		kind = target.kind,
+		path = target.path,
+		sha = target.sha,
+		orig = target.orig,
+	}))
 end
 
 -- Enter/space and clicks on a row.
@@ -321,10 +342,12 @@ local def: BlockDef<model.State> = {
 			activate(b, row)
 		elseif name == "o" and row then
 			if row.kind == "file" then
-				open_file(b, row)
+				open_diff(b, row)
 			elseif row.sha then
 				toggle_commit(b, row.sha)
 			end
+		elseif name == "e" and row and row.kind == "file" then
+			edit_file(b, row)
 		elseif name == "y" and row then
 			cx:copy(if row.target then row.target.path else row.sha or "")
 		elseif name == "r" then
@@ -355,7 +378,7 @@ local def: BlockDef<model.State> = {
 			if row then
 				state.sel = row.id
 				if ev.ev == "activate" then
-					open_file(b, row)
+					open_diff(b, row)
 				else
 					toggle_diff(b, row)
 				end
@@ -365,10 +388,16 @@ local def: BlockDef<model.State> = {
 			if row then
 				state.sel = row.id
 				if has_mod(ev.mods, { "alt", "meta" }) then
-					open_file(b, row)
+					edit_file(b, row)
 				else
 					toggle_diff(b, row)
 				end
+			end
+		elseif ev.ev == "action" and ev.act == "diff" then
+			local row = model.find(model.rows(state), ev.value)
+			if row then
+				state.sel = row.id
+				open_diff(b, row)
 			end
 		elseif ev.ev == "action" and ev.act == "base" and type(ev.value) == "string" then
 			state.base_pref = ev.value
@@ -382,18 +411,20 @@ local def: BlockDef<model.State> = {
 }
 
 tern.block.define("view", def)
+diff_block.define()
 
 -- Shell commands under a block's root (git commit, checkout, stash, …) refresh it.
 tern.on("command_finished", function(ev, _cx)
-	if next(blocks) == nil then
-		return
-	end
 	local cwd: string? = nil
 	for _, p in tern.pane.list() do
 		if p.pane == ev.pane then
 			cwd = p.cwd
 			break
 		end
+	end
+	diff_block.on_command(cwd)
+	if next(blocks) == nil then
+		return
 	end
 	reap(nil)
 	for _, b in blocks do

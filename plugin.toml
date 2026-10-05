@@ -12,3 +12,9 @@ id = "view"
 title = "Branch Changes"
 icon = "git-branch"
 palette = false
+
+[[blocks]]
+id = "diff"
+title = "File diff"
+icon = "git-branch"
+palette = false

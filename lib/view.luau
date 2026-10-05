@@ -133,7 +133,7 @@ local function file_nodes(
 			local row_id = item_rows[i]
 			local item_id = list_id .. ".f" .. idx
 			ids[item_id] = row_id
-			with(child, { key = "f" .. idx, actions = { click = "file=" .. row_id }, title = titles[i] })
+			with(child, { key = "f" .. idx, actions = { click = "file=" .. row_id, dblclick = "diff=" .. row_id }, title = titles[i] })
 			if row_id == state.sel then
 				selected = item_id
 			end
@@ -298,7 +298,7 @@ local function commits(state: model.State, snap: any, ids: { [string]: string })
 	return with(ui.section(head, cards), { key = "commits", collapsible = true })
 end
 
-local HINTS = { { "enter", "diff" }, { "o", "open" }, { "r", "refresh" }, { "b", "base" } }
+local HINTS = { { "enter", "inline diff" }, { "o", "open diff" }, { "e", "edit" }, { "r", "refresh" }, { "b", "base" } }
 
 -- A quiet footer: refresh state on the left, a few keycaps after it.
 local function dock(state: model.State): Node

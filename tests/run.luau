@@ -422,6 +422,156 @@ test("a missing worktree shows an error instead of failing", function()
 	assert(state.error and string.find(state.error, "No directory"), "error shown")
 end)
 
+-- diff links and the diff block
+
+local link = require("../lib/link")
+
+test("diff links round-trip paths with spaces, &, = and %", function()
+	local l = { root = "/w t/r", kind = "commit", path = "a b/c&d=e%f.lua", sha = "abc123", orig = "old name.lua" }
+	local back = link.decode(link.encode(l))
+	assert(back, "decoded")
+	eq(back.root, l.root)
+	eq(back.path, l.path)
+	eq(back.sha, "abc123")
+	eq(back.orig, "old name.lua")
+	eq(link.key(back), link.key(l))
+	local args = link.to_args(back)
+	eq(link.key(link.from_args(args) :: any), link.key(l), "args round-trip")
+end)
+
+test("diff links reject other schemes and incomplete queries", function()
+	eq(link.decode("https://example.com/diff?root=/r&kind=staged&path=a"), nil)
+	eq(link.decode(link.PREFIX .. "root=/r&kind=bogus&path=a"), nil)
+	eq(link.decode(link.PREFIX .. "root=/r&kind=commit&path=a"), nil, "commit needs a sha")
+	eq(link.decode(link.PREFIX .. "root=/r&kind=staged"), nil, "path required")
+	eq(link.from_args({}), nil)
+end)
+
+local function opened_link(): any
+	for i = #S.effects, 1, -1 do
+		local e = S.effects[i]
+		if e[1] == "open" then
+			return link.decode(e[2])
+		end
+	end
+	return nil
+end
+
+test("o on a deleted file opens a diff block link instead of failing", function()
+	local def, cx, state = start()
+	-- lib/util.lua is absent from the stub file system: the deleted-file case.
+	S.files = {}
+	state.sel = "unstaged:lib/util.lua"
+	key(def, state, cx, "o")
+	local l = opened_link()
+	assert(l, "followed a tern-branch-changes:// link")
+	eq(l.kind, "unstaged")
+	eq(l.path, "lib/util.lua")
+	eq(l.root, F.root)
+	eq(state.diffs["unstaged:lib/util.lua"], nil, "o does not toggle the inline diff")
+end)
+
+test("e on a deleted file explains instead of opening", function()
+	local def, cx, state = start()
+	S.files = {}
+	state.sel = "unstaged:lib/util.lua"
+	key(def, state, cx, "e")
+	eq(S.effects[#S.effects][1], "toast")
+	assert(string.find(S.effects[#S.effects][4], "press o", 1, true), "points at o")
+end)
+
+test("double-click opens the diff block; single click stays inline", function()
+	local def, cx, state = start()
+	def.event(state, { ev = "action", act = "diff", value = "staged:new.lua" }, cx)
+	local l = opened_link()
+	eq(l.kind, "staged")
+	eq(state.diffs["staged:new.lua"], nil)
+	def.event(state, { ev = "action", act = "file", value = "staged:new.lua" }, cx)
+	S.drain()
+	assert(state.diffs["staged:new.lua"].text, "inline diff on single click")
+	local v = def.view(state, cx)
+	local item = find(v.main, function(n)
+		return n.k == "item"
+	end)
+	eq(item.p.actions.dblclick, "diff=staged:new.lua")
+end)
+
+test("o on a commit file links to that commit's diff", function()
+	local def, cx, state = start()
+	local move = state.snap.commits[3]
+	state.sel = "c:" .. move.sha
+	key(def, state, cx, "enter")
+	key(def, state, cx, "j")
+	key(def, state, cx, "o")
+	local l = opened_link()
+	eq(l.kind, "commit")
+	eq(l.sha, move.sha)
+	eq(l.path, "docs/b c.txt")
+	eq(l.orig, "a.txt")
+end)
+
+test("diff block loads the patch full-pane and reloads on r", function()
+	start()
+	local def = S.blocks.diff
+	assert(def, "branch-changes.diff defined")
+	table.insert(S.panes, { pane = 11, cwd = F.root, program = "branch-changes.diff", title = "", busy = false })
+	local cx = S.cx(11, F.root)
+	local state = def.init(cx, link.to_args({ root = F.root, kind = "staged", path = "new.lua" }), nil)
+	S.drain()
+	assert(state.text and string.find(state.text, "+print('hello')", 1, true), "patch loaded")
+	eq(def.title(state), "new.lua (staged)")
+	local v = def.view(state, cx)
+	local d = find(v.main, function(n)
+		return n.k == "diff"
+	end)
+	eq(d.p.path, "new.lua")
+	eq(S.kv.diff_panes["11"], link.key({ root = F.root, kind = "staged", path = "new.lua" }))
+	local before = #S.ran
+	def.key(state, { name = "r", ctrl = false, alt = false, shift = false, meta = false }, cx)
+	S.drain()
+	eq(#S.ran, before + 1, "reloaded")
+end)
+
+test("diff block with bad args shows an error instead of failing", function()
+	start()
+	local state = S.blocks.diff.init(S.cx(12, nil), { "/r", "commit", "a.txt" }, nil)
+	assert(state.err, "error shown")
+	eq(S.blocks.diff.title(state), "File diff")
+end)
+
+test("window route opens a diff block, or focuses the one already open", function()
+	S.routes = {}
+	__reload("window")
+	local route = S.routes[1]
+	assert(route, "route.link registered")
+	local target = { root = "/r", kind = "commit", path = "x.lua", sha = "abc" }
+	local url = link.encode(target)
+	local focused: number? = nil
+	local panes = {}
+	local wcx = {
+		session = {
+			panes = function(_self)
+				return panes
+			end,
+		},
+		layout = {
+			focus = function(_self, pane)
+				focused = pane
+			end,
+		},
+	}
+	eq(route({ url = "https://example.com", pane = 1, mods = {} }, wcx), nil, "other links pass")
+	S.kv.diff_panes = {}
+	local decision = route({ url = url, pane = 1, mods = {} }, wcx)
+	eq(decision.block, "branch-changes.diff")
+	eq(decision.args[4], "abc")
+	panes = { { pane = 5, block = "branch-changes.diff", cwd = "", title = "" } }
+	S.kv.diff_panes = { ["5"] = link.key(target) }
+	decision = route({ url = url, pane = 1, mods = {} }, wcx)
+	eq(decision.handled, true)
+	eq(focused, 5)
+end)
+
 print(string.format("%d passed, %d failed", passed, failed))
 if failed > 0 then
 	error("tests failed")

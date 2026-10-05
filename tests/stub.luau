@@ -117,6 +117,16 @@ local tern = {
 			S.blocks[id] = def
 		end,
 	},
+	route = {
+		link = function(fn)
+			S.routes = S.routes or {}
+			table.insert(S.routes, fn)
+		end,
+	},
+	command = function(def)
+		S.commands = S.commands or {}
+		S.commands[def.id] = def
+	end,
 	on = function(name, fn)
 		S.handlers[name] = S.handlers[name] or {}
 		table.insert(S.handlers[name], fn)
