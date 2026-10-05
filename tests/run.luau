@@ -205,7 +205,7 @@ test("block loads uncommitted work and branch commits against origin/main", func
 	eq(snap.status.staged.files[1].add, 1, "staged counts")
 	assert(snap.total and snap.total.files > 0, "branch total")
 	eq(state.sel, "staged:new.lua", "selects the first row")
-	eq(def.title(state), "⎇ feat · " .. util.basename(F.root))
+	eq(def.title(state), "feat · " .. util.basename(F.root))
 	for _, ran in S.ran do
 		assert(string.find(ran, "--no-optional-locks", 1, true), "every git call skips optional locks")
 	end
@@ -232,6 +232,75 @@ test("view marks the selected row and keeps item ids stable", function()
 	end)
 	eq(#commits.c, 4, "one card per branch commit")
 	eq(commits.c[1].p.collapsed, true)
+end)
+
+local function texts(node: any, out: { string }?): { string }
+	local acc = out or {}
+	local p = node.p or {}
+	for _, field in { "spans", "head", "label", "detail", "value" } do
+		local spans = p[field]
+		if type(spans) == "table" then
+			for _, sp in spans do
+				if type(sp) == "table" and sp.t then
+					table.insert(acc, sp.t)
+				end
+			end
+		end
+	end
+	if type(p.text) == "string" then
+		table.insert(acc, p.text)
+	end
+	for _, child in node.c or {} do
+		texts(child, acc)
+	end
+	return acc
+end
+
+test("view uses native chrome: chips, toned file rows, no TUI glyphs", function()
+	local def, cx, state = start()
+	local v = def.view(state, cx)
+	local all = table.concat(texts(v.main), "|") .. table.concat(texts(v.dock), "|")
+	for _, glyph in { "⎇", "▸", "▾", "↑", "●" } do
+		assert(not string.find(all, glyph, 1, true), "glyph left in view: " .. glyph)
+	end
+	local head = find(v.main, function(n)
+		return n.p and n.p.key == "head"
+	end)
+	eq(head.p.spans[1].t, "feat", "branch is the title")
+	eq(head.p.spans[1].s, "strong")
+	local chips = find(v.main, function(n)
+		return n.p and n.p.key == "chips"
+	end)
+	local labels = {}
+	for _, chip in chips.c do
+		eq(chip.k, "badge")
+		labels[chip.p.key] = chip.p.text
+	end
+	eq(labels.ahead, "3 unpushed")
+	eq(labels.dirty, "3 changed")
+	local item = find(v.main, function(n)
+		return n.k == "item"
+	end)
+	eq(item.p.label[1].t, "new.lua", "file name is the label")
+	eq(item.p.tone, "warning", "modified rows are toned warning")
+	eq(item.p.title, "modified")
+	local unc = find(v.main, function(n)
+		return n.p and n.p.key == "untracked"
+	end)
+	local untracked = find(unc, function(n)
+		return n.k == "item"
+	end)
+	eq(untracked.p.tone, "muted")
+	local card = find(v.main, function(n)
+		return n.k == "card" and n.p.role == "branch-changes.commit"
+	end)
+	eq(card.p.head[1].s, "strong", "subject leads the commit head")
+	eq(card.p.head[3].s, "code", "sha styled as code")
+	assert(string.find(table.concat(texts(card), "|"), "unpushed", 1, true), "unpushed tag")
+	local kbd = find(v.dock, function(n)
+		return n.k == "kbd"
+	end)
+	assert(kbd, "dock key hints are keycaps")
 end)
 
 test("enter opens an inline diff under the file; escape closes it", function()

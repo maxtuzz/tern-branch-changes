@@ -287,7 +287,7 @@ local def: BlockDef<model.State> = {
 		local snap = state.snap
 		local name = util.basename(state.root or state.dir)
 		if snap and snap.status.head then
-			return "⎇ " .. snap.status.head .. " · " .. name
+			return snap.status.head .. " · " .. name
 		end
 		return "Branch changes · " .. name
 	end,

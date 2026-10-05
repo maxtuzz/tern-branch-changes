@@ -61,6 +61,9 @@ end
 function ui.list(items)
 	local c = {}
 	for i, it in items do
+		for k in it do
+			assert(({ label = true, detail = true, value = true, icon = true, tone = true }) [k], "ui.list: unknown item field " .. tostring(k))
+		end
 		c[i] = node("item", { label = it.label, detail = it.detail, value = it.value, icon = it.icon, tone = it.tone })
 	end
 	return node("list", nil, c)

@@ -18,19 +18,31 @@ After editing the Luau, run `tern plugin reload` again: open blocks restart with
 
 Focus any pane inside a git worktree, then run **Show branch changes** from the palette (`plugin.branch-changes.open`, default chord `ctrl+alt+shift+b`). The block opens beside the focused pane. If a block for that worktree is already open, the command focuses it instead.
 
-```
-⎇ feat/foo vs origin/dev · ↑3 unpushed · ●5
-/path/to/worktree  ·  14 files +120 −30 since merge-base
-base [origin/dev] [origin/main] [origin/HEAD]
+It reads like a Source Control / PR Files panel rather than a terminal UI:
 
-Uncommitted ●5
-  Staged 1      ▸ M src/app.ts           +4 −1
-  Unstaged 2    ▸ M lib/util.lua         +1 −1
-  Untracked 2   ▸ ? notes.md
-Commits 3  origin/dev..HEAD
-  ▸ a1b2c3d fix login redirect  Ada · 2h ↑
-  ▸ …
 ```
+feat/foo  my-worktree
+[3 unpushed] [5 changed] [14 files  +120 −30]
+compared to [origin/dev] [origin/main] [origin/HEAD]
+/path/to/my-worktree
+
+Changes 5
+  Staged 1
+    ▢ app.ts        src                +4 −1  M
+  Unstaged 2
+    ▢ util.lua      lib                +1 −1  M
+  Untracked 2
+    ▢ notes.md                                ?
+Commits 3  since origin/dev
+  ▸ fix login redirect   a1b2c3d   Ada · 2h   unpushed
+  ▸ …
+Updated 14:02   [enter] diff  [o] open  [r] refresh  [b] base
+```
+
+- **Header:** the branch name is the title. Unpushed, behind, changed and branch-total counts are badge chips, and the base refs are clickable chips.
+- **File rows:** the label is the file name, with its folder dim beside it. The icon is tinted by status (modified warning, added success, deleted error, renamed/copied info, conflict error, untracked muted). `+n −n` and the status letter sit on the right, and hovering shows the status name. A row's diff opens inline under it.
+- **Commits:** each commit is a collapsible card. The head reads subject, short SHA, then author · age, with an `unpushed` tag on commits beyond the upstream.
+- **Footer:** the refresh time and a few keycap hints.
 
 | Key / gesture | Action |
 |---|---|
