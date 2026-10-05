@@ -1,0 +1,14 @@
+schema = 1
+id = "branch-changes"
+name = "Branch Changes"
+version = "0.1.0"
+description = "Branch-scoped changes: uncommitted + expandable commits + inline diffs"
+icon = "git-branch"
+host = "host.luau"
+window = "window.luau"
+
+[[blocks]]
+id = "view"
+title = "Branch Changes"
+icon = "git-branch"
+palette = false
