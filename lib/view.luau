@@ -89,7 +89,7 @@ local function value(f: parse.FileEntry, lay: Layout): { Span }
 			table.insert(spans, ui.span((if lay.compact then "−" else " −") .. tostring(f.del), "del num"))
 		end
 	end
-	table.insert(spans, ui.span(" " .. f.code, "strong " .. (STATUS_TONE[f.code] or "muted")))
+	table.insert(spans, ui.span((if #spans > 0 then " " else "") .. f.code, "strong " .. (STATUS_TONE[f.code] or "muted")))
 	return spans
 end
 
@@ -291,9 +291,16 @@ local function commit_item(state: model.State, c: parse.Commit, unpushed: boolea
 	if c.author ~= state.me and not lay.compact then
 		table.insert(detail, ui.span(c.author, "muted"))
 	end
-	local v: { Span } = { ui.span(c.short, "code") }
-	table.insert(v, ui.span(" " .. util.age(os.time() - c.time), "muted"))
-	local title = c.subject .. "\n" .. c.short .. " · " .. c.author .. (if unpushed then " · not pushed" else "")
+	-- An item's value reserves up to 40% of the row, and that width comes out of
+	-- the subject. `%h` grows with the repo, so the sha is cut back to 7 and
+	-- waits in the tooltip until the pane is wide enough to spend room on it.
+	local sha = string.sub(c.short, 1, 7)
+	local v: { Span } = {}
+	if lay.wide then
+		table.insert(v, ui.span(sha .. " ", "code"))
+	end
+	table.insert(v, ui.span(util.age(os.time() - c.time), "muted"))
+	local title = c.subject .. "\n" .. sha .. " · " .. c.author .. (if unpushed then " · not pushed" else "")
 	return {
 		label = { ui.span(c.subject, if state.open[c.sha] then "strong" else "") },
 		detail = if #detail > 0 then detail else nil,

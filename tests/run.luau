@@ -301,7 +301,12 @@ test("view uses native chrome: chips, toned file rows, no TUI glyphs", function(
 		return n.k == "item"
 	end)
 	eq(crow.p.label[1].t, state.snap.commits[1].subject, "subject is the commit label")
-	eq(crow.p.value[1].s, "code", "sha styled as code")
+	eq(crow.p.value[1].s, "muted", "a sidebar spends the row on the subject, not the sha")
+	assert(string.find(crow.p.title, state.snap.commits[1].short, 1, true), "the sha stays in the tooltip")
+	local wide = find(view.build(state, 140).main, function(n)
+		return n.k == "item" and n.p.actions and string.find(n.p.actions.click or "", "commit=", 1, true)
+	end)
+	eq(wide.p.value[1].s, "code", "a wide pane shows the sha, styled as code")
 	eq(crow.p.tone, "warning", "unpushed commits are toned")
 	local kbd = find(v.dock, function(n)
 		return n.k == "kbd"

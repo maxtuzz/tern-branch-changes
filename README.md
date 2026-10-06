@@ -43,7 +43,7 @@ Commits 3
 - **Header:** two rows that never wrap. The branch name takes the first row with the base as one chip on its right; click it (or press `b`) to cycle to the next base. The second row holds short status chips: `↑n`/`↓n` for ahead and behind, the uncommitted count, and the branch totals. Every chip carries a tooltip with the long form.
 - **File rows:** the file name is the label, its folder dim beside it, the icon tinted by status (modified warning, added success, deleted error, renamed/copied info, conflict error, untracked muted). `+n −n` and the status letter are right-aligned, and the tooltip gives the full path and status.
 - **Live work:** a file whose status or line counts changed since the last refresh is marked `just now` and floats to the top of its group for three minutes, so an agent's edits are visible as they land. The footer carries a live timer showing how old the picture is.
-- **Commits:** one line each, no card borders: subject (truncated), then short SHA and age right-aligned. Unpushed commits are toned. The author appears only when it isn't this repo's `user.name`. Clicking a commit expands its files as the same file rows.
+- **Commits:** one line each, no card borders: subject (truncated) with the age right-aligned. The SHA waits in the tooltip until the pane is wide, because a row's value column reserves up to 40% of the width and that comes straight out of the subject. Unpushed commits are toned. The author appears only when it isn't this repo's `user.name`. Clicking a commit expands its files as the same file rows.
 - **Footer:** hints are added only while they fit the pane, so nothing wraps mid-word; a narrow sidebar simply shows fewer.
 
 ### Full view
