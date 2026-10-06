@@ -8,6 +8,7 @@ local M = {}
 
 M.SCHEME = "tern-branch-changes"
 M.PREFIX = M.SCHEME .. "://diff?"
+M.VIEW_PREFIX = M.SCHEME .. "://view?"
 
 export type DiffLink = {
 	root: string,
@@ -97,6 +98,24 @@ function M.from_args(args: { string }): DiffLink?
 		orig = if args[5] and args[5] ~= "" then args[5] else nil,
 	}
 	return out
+end
+
+-- `tern-branch-changes://view?root=…`: open the list block full width (a new tab).
+function M.view_url(root: string): string
+	return M.VIEW_PREFIX .. "root=" .. encode(root)
+end
+
+-- The root of a view link, or nil when `url` isn't one.
+function M.decode_view(url: string): string?
+	if string.sub(url, 1, #M.VIEW_PREFIX) ~= M.VIEW_PREFIX then
+		return nil
+	end
+	local root = string.match(string.sub(url, #M.VIEW_PREFIX + 1), "^root=([^&]+)")
+	if root == nil then
+		return nil
+	end
+	local path = decode(root)
+	return if path ~= "" then path else nil
 end
 
 -- Identity of a diff view, for focusing an open block instead of opening another.

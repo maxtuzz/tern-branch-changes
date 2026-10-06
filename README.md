@@ -18,41 +18,59 @@ After editing the Luau, run `tern plugin reload` again: open blocks restart with
 
 Focus any pane inside a git worktree, then run **Show branch changes** from the palette (`plugin.branch-changes.open`, default chord `ctrl+alt+shift+b`). The block opens beside the focused pane. If a block for that worktree is already open, the command focuses it instead.
 
-It reads like a Source Control / PR Files panel rather than a terminal UI:
+The layout follows the pane's width, so one block serves both places.
+
+### Sidebar (the design target, ~250-320px)
 
 ```
-feat/foo  my-worktree
-[3 unpushed] [5 changed] [14 files  +120 −30]
-compared to [origin/dev] [origin/main] [origin/HEAD]
-/path/to/my-worktree
+feat/login-redirect              [dev]
+↑3  ↓1  5 changed  +120 −30
 
 Changes 5
   Staged 1
-    ▢ app.ts        src                +4 −1  M
+    app.ts         src       +4−1 M
   Unstaged 2
-    ▢ util.lua      lib                +1 −1  M
+    util.lua       lib  just now  +1−1 M
+    notes.md       docs           +2 M
   Untracked 2
-    ▢ notes.md                                ?
-Commits 3  since origin/dev
-  ▸ fix login redirect   a1b2c3d   Ada · 2h   unpushed
-  ▸ …
-Updated 14:02   [enter] inline diff  [o] open diff  [e] edit  [r] refresh  [b] base
+    scratch.md                       ?
+Commits 3
+  fix login redirect      a1b2c3d 2h
+  drop the retry loop     9f0e1d2 4h
+12s ago  [enter] diff  [o] open
 ```
 
-- **Header:** the branch name is the title. Unpushed, behind, changed and branch-total counts are badge chips, and the base refs are clickable chips.
-- **File rows:** the label is the file name, with its folder dim beside it. The icon is tinted by status (modified warning, added success, deleted error, renamed/copied info, conflict error, untracked muted). `+n −n` and the status letter sit on the right, and hovering shows the status name. A row's diff opens inline under it.
-- **Commits:** each commit is a collapsible card. The head reads subject, short SHA, then author · age, with an `unpushed` tag on commits beyond the upstream.
-- **Footer:** the refresh time and a few keycap hints.
+- **Header:** two rows that never wrap. The branch name takes the first row with the base as one chip on its right; click it (or press `b`) to cycle to the next base. The second row holds short status chips: `↑n`/`↓n` for ahead and behind, the uncommitted count, and the branch totals. Every chip carries a tooltip with the long form.
+- **File rows:** the file name is the label, its folder dim beside it, the icon tinted by status (modified warning, added success, deleted error, renamed/copied info, conflict error, untracked muted). `+n −n` and the status letter are right-aligned, and the tooltip gives the full path and status.
+- **Live work:** a file whose status or line counts changed since the last refresh is marked `just now` and floats to the top of its group for three minutes, so an agent's edits are visible as they land. The footer carries a live timer showing how old the picture is.
+- **Commits:** one line each, no card borders: subject (truncated), then short SHA and age right-aligned. Unpushed commits are toned. The author appears only when it isn't this repo's `user.name`. Clicking a commit expands its files as the same file rows.
+- **Footer:** hints are added only while they fit the pane, so nothing wraps mid-word; a narrow sidebar simply shows fewer.
+
+### Full view
+
+**Branch changes (full view)** in the palette (`plugin.branch-changes.open_full`), or `f` in the sidebar block, opens the same block in its own tab. At 100 cells or wider it lays out as two columns: the list on the left, and the selected file's diff as the hero on the right, with a chip to pop that diff into its own pane.
+
+```
+feat/login-redirect  [origin/dev]        │ app.ts  src
+↑3  ↓1  5 changed  14 files  +120 −30    │ ┌──────────────────────────┐
+/path/to/my-worktree                     │ │ @@ -12,7 +12,9 @@        │
+Changes 5                                │ │ -  const r = retry(x)    │
+  Staged 1                               │ │ +  const r = await x()   │
+    app.ts        src          +4 −1  M  │ └──────────────────────────┘
+```
+
+In the full view a click loads the diff into the hero instead of folding it away; in the sidebar it still toggles inline under the row.
 
 | Key / gesture | Action |
 |---|---|
 | `j` / `k`, ↓ / ↑, `g` / `G` | Move the selection |
-| click, `enter` / `space` | File: toggle its diff inline, under the row. Commit: expand it (files load lazily) |
+| click, `enter` / `space` | File: show its diff — inline under the row in the sidebar, in the hero column in the full view. Commit: expand it (files load lazily) |
 | double-click, `o` | Open the file's diff in its own **File diff** block beside this one. If that diff is already open, focus it. Works for deleted files too |
 | `e`, ⌥-click or ⌘-click | Edit the worktree file in a Tern file block. For a deleted file it explains that and suggests `o` instead |
 | `y` | Copy the selected path or commit SHA |
 | `r` | Refresh |
-| `b` / `B`, click a base badge | Cycle the base ref |
+| `b` / `B`, click the base chip | Cycle the base ref |
+| `f` | Open this worktree in the full view (a new tab) |
 | `escape` | Close all inline diffs |
 
 ### File diff block
@@ -102,7 +120,7 @@ Optional `.tern/branch-changes.json` in the worktree root. It's re-read on every
 ## How it works
 
 - `host.luau` defines the block. All git runs on the host through async `tern.process.run` with `--no-optional-locks`, `GIT_OPTIONAL_LOCKS=0`, `-z` porcelain output and timeouts. The block never takes the index lock away from your own git. (`cx.git` is window-only, so it can't be used here.)
-- `lib/diff_block.luau` defines the full-pane File diff block, and `lib/link.luau` encodes the links that open it.
+- `lib/view.luau` builds both layouts from `cx.cols`; `lib/diff_block.luau` defines the full-pane File diff block, and `lib/link.luau` encodes the links that open it.
 - `window.luau` registers the command and the `tern-branch-changes://` link route. The command resolves the focused pane's worktree root, then focuses an existing block for that root or splits a new one to the right.
 - `lib/` holds the parsers (`parse`), config validation (`config`), git calls (`git`), state and keyboard rows (`model`) and the view (`view`).
 
@@ -122,6 +140,15 @@ The tests run the real `host.luau` against a stub `tern` (`tests/stub.luau`) and
 - [DESIGN.md](./DESIGN.md)
 - [docs/](./docs/): offline Tern plugin docs
 - [tern.d.luau](./tern.d.luau)
+
+## Tern API limitations worked around
+
+- **Width.** A block learns its size only in cells, from `cx.cols`, so the layout switches at cell thresholds (sidebar under 56, two columns at 100) rather than at pixel widths.
+- **No wrap control.** A `text` node has no "don't wrap" prop, so rows that must stay on one line are clipped with `max = { h = "1lines" }` and the footer only adds hints that fit the pane's width. A chip row narrower than its chips is cut off rather than wrapped.
+- **No hover state.** Plugins see clicks, not hovers, so anything "on hover" is a `title` tooltip instead; that is where the long forms of the chips and rows live.
+- **No menus for a plugin's own nodes.** `actions` carries `click` and `dblclick`, so the base picker is one chip that cycles rather than a dropdown.
+- **Card heads take spans only**, which is one reason commits are list rows now: a row gives real truncation and a right-aligned value, which a card head does not.
+- **No folder tree yet.** Rows are flat paths (file name plus dim folder); a grouped-by-folder toggle would need a `tree` node, which doesn't carry the per-row value column.
 
 ## License
 

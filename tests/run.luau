@@ -230,8 +230,11 @@ test("view marks the selected row and keeps item ids stable", function()
 	local commits = find(main, function(n)
 		return n.p and n.p.key == "commits"
 	end)
-	eq(#commits.c, 4, "one card per branch commit")
-	eq(commits.c[1].p.collapsed, true)
+	local clist = find(commits, function(n)
+		return n.k == "list"
+	end)
+	eq(#clist.c, 4, "one row per branch commit")
+	eq(clist.c[1].p.key, "c" .. state.snap.commits[1].sha, "rows keyed by sha")
 end)
 
 local function texts(node: any, out: { string }?): { string }
@@ -260,14 +263,14 @@ test("view uses native chrome: chips, toned file rows, no TUI glyphs", function(
 	local def, cx, state = start()
 	local v = def.view(state, cx)
 	local all = table.concat(texts(v.main), "|") .. table.concat(texts(v.dock), "|")
-	for _, glyph in { "⎇", "▸", "▾", "↑", "●" } do
+	for _, glyph in { "⎇", "▸", "▾", "●" } do
 		assert(not string.find(all, glyph, 1, true), "glyph left in view: " .. glyph)
 	end
-	local head = find(v.main, function(n)
-		return n.p and n.p.key == "head"
+	local branch = find(v.main, function(n)
+		return n.p and n.p.key == "branch"
 	end)
-	eq(head.p.spans[1].t, "feat", "branch is the title")
-	eq(head.p.spans[1].s, "strong")
+	eq(branch.p.spans[1].t, "feat", "branch is the title")
+	eq(branch.p.spans[1].s, "strong")
 	local chips = find(v.main, function(n)
 		return n.p and n.p.key == "chips"
 	end)
@@ -276,14 +279,14 @@ test("view uses native chrome: chips, toned file rows, no TUI glyphs", function(
 		eq(chip.k, "badge")
 		labels[chip.p.key] = chip.p.text
 	end
-	eq(labels.ahead, "3 unpushed")
+	eq(labels.ahead, "↑3", "ahead/behind use compact git shorthand")
 	eq(labels.dirty, "3 changed")
 	local item = find(v.main, function(n)
 		return n.k == "item"
 	end)
 	eq(item.p.label[1].t, "new.lua", "file name is the label")
 	eq(item.p.tone, "warning", "modified rows are toned warning")
-	eq(item.p.title, "modified")
+	eq(item.p.title, "new.lua · modified")
 	local unc = find(v.main, function(n)
 		return n.p and n.p.key == "untracked"
 	end)
@@ -291,12 +294,15 @@ test("view uses native chrome: chips, toned file rows, no TUI glyphs", function(
 		return n.k == "item"
 	end)
 	eq(untracked.p.tone, "muted")
-	local card = find(v.main, function(n)
-		return n.k == "card" and n.p.role == "branch-changes.commit"
+	local commits = find(v.main, function(n)
+		return n.p and n.p.key == "commits"
 	end)
-	eq(card.p.head[1].s, "strong", "subject leads the commit head")
-	eq(card.p.head[3].s, "code", "sha styled as code")
-	assert(string.find(table.concat(texts(card), "|"), "unpushed", 1, true), "unpushed tag")
+	local crow = find(commits, function(n)
+		return n.k == "item"
+	end)
+	eq(crow.p.label[1].t, state.snap.commits[1].subject, "subject is the commit label")
+	eq(crow.p.value[1].s, "code", "sha styled as code")
+	eq(crow.p.tone, "warning", "unpushed commits are toned")
 	local kbd = find(v.dock, function(n)
 		return n.k == "kbd"
 	end)
@@ -570,6 +576,198 @@ test("window route opens a diff block, or focuses the one already open", functio
 	decision = route({ url = url, pane = 1, mods = {} }, wcx)
 	eq(decision.handled, true)
 	eq(focused, 5)
+end)
+
+-- sidebar / full-view layouts
+
+local function row_of(node: any, key: string): any
+	return find(node, function(n)
+		return n.p and n.p.key == key
+	end)
+end
+
+local function longest_line(node: any): number
+	local most = 0
+	for _, t in texts(node) do
+		most = math.max(most, utf8.len(t) or #t)
+	end
+	return most
+end
+
+test("a sidebar-width pane keeps header rows on one line and trims labels", function()
+	local def, cx, state = start()
+	local v = def.view(state, cx)  -- cx.cols is 80 in the stub
+	local narrow = view.build(state, 38)
+	local head = row_of(narrow.main, "head")
+	eq(head.p.max.h, "1lines", "the branch row is clipped to one line")
+	eq(row_of(narrow.main, "chips").p.max.h, "1lines", "the chip row cannot wrap")
+	local base = row_of(narrow.main, "base")
+	eq(base.k, "badge")
+	eq(base.p.text, "main", "the base chip drops the remote at sidebar width")
+	eq(base.p.shrink, 0)
+	eq(base.p.actions.click, "base-next", "one chip cycles the base")
+	eq(row_of(narrow.main, "meta"), nil, "the worktree path is dropped when narrow")
+	local chips = row_of(narrow.main, "chips")
+	local width = 0
+	for _, chip in chips.c do
+		width += (utf8.len(chip.p.text) or 0) + 3
+	end
+	assert(width <= 38, "chips fit a 38-cell sidebar, got " .. width)
+	local _ = v
+end)
+
+test("footer hints are dropped to fit, never wrapped", function()
+	local _, _, state = start()
+	local function hints(cols: number): { string }
+		local out = {}
+		local dock = view.build(state, cols).dock
+		for _, t in texts(dock) do
+			table.insert(out, t)
+		end
+		return out
+	end
+	local narrow, wide = hints(30), hints(160)
+	assert(#narrow < #wide, "a sidebar shows fewer hints than a wide pane")
+	for _, set in { narrow, wide } do
+		for _, t in set do
+			assert(not string.find(t, "\n"), "no hint wraps")
+		end
+	end
+	local cols = 30
+	local used = 0
+	for _, t in narrow do
+		used += (utf8.len(t) or 0) + 2
+	end
+	assert(used <= cols, "narrow hints fit " .. cols .. " cells, used " .. used)
+	local dock = view.build(state, 30).dock
+	eq(find(dock, function(n)
+		return n.p and n.p.max and n.p.max.h == "1lines"
+	end) ~= nil, true, "the footer row is clipped to one line")
+	assert(longest_line(dock) < 30, "no single footer label exceeds the pane")
+end)
+
+test("a wide pane puts the file list beside the selected diff", function()
+	local def, cx, state = start()
+	key(def, state, cx, "enter") -- load the selected file's diff
+	local wide = view.build(state, 140)
+	eq(wide.main.k, "row", "two columns")
+	local list = row_of(wide.main, "list")
+	local hero = row_of(wide.main, "hero")
+	assert(list and hero, "list and hero columns")
+	eq(hero.p.role, "branch-changes.hero")
+	local d = find(hero, function(n)
+		return n.k == "diff"
+	end)
+	eq(d.p.path, "new.lua", "the hero shows the selected file's diff")
+	eq(find(list, function(n)
+		return n.k == "diff"
+	end), nil, "and the list column stays unbroken")
+	local narrow = view.build(state, 40)
+	eq(narrow.main.k, "col", "a sidebar is one column")
+	assert(find(narrow.main, function(n)
+		return n.k == "diff"
+	end), "where the diff stays inline under its row")
+end)
+
+test("the hero names the file and offers its own pane", function()
+	local def, cx, state = start()
+	local wide = view.build(state, 140)
+	local hero = row_of(wide.main, "hero")
+	eq(find(hero, function(n)
+		return n.p and n.p.key == "pop"
+	end).p.actions.click, "diff=staged:new.lua")
+	local _ = def
+	local _ = cx
+end)
+
+test("files an agent just touched surface first with a live cue", function()
+	local def, cx, state = start()
+	eq(model.fresh_age(state, "unstaged:lib/util.lua"), nil, "the first snapshot marks nothing fresh")
+	-- A second snapshot with a changed signature is what an agent's edit looks like.
+	state.sigs["unstaged:lib/util.lua"] = "M/99/99/"
+	model.note_changes(state, false)
+	local age = model.fresh_age(state, "unstaged:lib/util.lua")
+	assert(age ~= nil and age < 5, "the edited file is fresh")
+	local unstaged = row_of(def.view(state, cx).main, "unstaged")
+	local item = find(unstaged, function(n)
+		return n.k == "item"
+	end)
+	local detail = table.concat(texts(item), "|")
+	assert(string.find(detail, "just now", 1, true), "the row says when it changed")
+	state.fresh["unstaged:lib/util.lua"] = os.time() - model.FRESH_SECONDS - 60
+	eq(model.fresh_age(state, "unstaged:lib/util.lua"), nil, "and the cue fades")
+end)
+
+test("clicking a commit row expands it; the author shows only for others", function()
+	local def, cx, state = start()
+	local sha = state.snap.commits[1].sha
+	state.me = "Ada"
+	local crow = find(row_of(def.view(state, cx).main, "commits"), function(n)
+		return n.k == "item"
+	end)
+	eq(crow.p.detail, nil, "your own commits leave the author out")
+	eq(crow.p.actions.click, "commit=" .. sha)
+	def.event(state, { ev = "action", act = "commit", value = sha }, cx)
+	S.drain()
+	eq(state.open[sha], true, "the row expanded")
+	assert(state.files[sha].group, "and loaded its files")
+	state.me = "Someone else"
+	crow = find(row_of(def.view(state, cx).main, "commits"), function(n)
+		return n.k == "item"
+	end)
+	eq(crow.p.detail[1].t, "Ada", "another author is named")
+end)
+
+test("f opens the same worktree full width through the view link", function()
+	local def, cx, state = start()
+	key(def, state, cx, "f")
+	local opened = S.effects[#S.effects]
+	eq(opened[1], "open")
+	eq(link.decode_view(opened[2]), F.root)
+	eq(link.decode_view("tern-branch-changes://diff?root=/r&kind=staged&path=a"), nil)
+	eq(link.decode_view("https://example.com/view?root=/r"), nil)
+	local _ = state
+end)
+
+test("in a wide pane a click keeps the hero diff instead of folding it", function()
+	local def, cx, state = start()
+	cx.cols = 140
+	def.event(state, { ev = "action", act = "file", value = "staged:new.lua" }, cx)
+	S.drain()
+	assert(state.diffs["staged:new.lua"].text, "loaded")
+	def.event(state, { ev = "action", act = "file", value = "staged:new.lua" }, cx)
+	S.drain()
+	assert(state.diffs["staged:new.lua"], "a second click leaves it loaded")
+	cx.cols = 40
+	def.event(state, { ev = "action", act = "file", value = "staged:new.lua" }, cx)
+	eq(state.diffs["staged:new.lua"], nil, "but a sidebar still toggles it closed")
+end)
+
+test("the window route opens the full view in its own tab", function()
+	S.routes = {}
+	__reload("window")
+	local route = S.routes[1]
+	local launched: any = nil
+	local wcx = {
+		session = {
+			panes = function(_self)
+				return {}
+			end,
+		},
+		layout = {
+			new_tab = function(_self, launch)
+				launched = launch
+				return 9
+			end,
+			focus = function(_self, _pane) end,
+		},
+	}
+	local decision = route({ url = link.view_url("/w/repo"), pane = 1, mods = {} }, wcx)
+	eq(decision.handled, true)
+	eq(launched.block, "branch-changes.view")
+	eq(launched.args[1], "/w/repo")
+	eq(launched.cwd, "/w/repo")
+	assert(S.commands.open_full, "palette entry for the full view")
 end)
 
 print(string.format("%d passed, %d failed", passed, failed))

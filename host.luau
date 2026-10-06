@@ -141,8 +141,10 @@ refresh = function(b: Block)
 			s.loading = false
 			s.error = err
 			if snap then
+				local first = s.refreshed_at == nil
 				s.snap = snap
 				s.refreshed_at = os.time()
+				model.note_changes(s, first)
 				b.head = snap.status.oid
 				model.prune(s)
 				if s.sel == nil then
@@ -218,6 +220,14 @@ local function edit_file(b: Block, row: model.Row)
 	end
 end
 
+-- Opens this worktree's view full width, in its own tab (`f`).
+local function open_full(b: Block)
+	local root = b.state.root
+	if root then
+		b.cx:open(link.view_url(root))
+	end
+end
+
 -- Opens the file's diff in its own `branch-changes.diff` block (`o`, double-click).
 -- A host block can't create blocks, so it follows a link window.luau routes.
 local function open_diff(b: Block, row: model.Row)
@@ -234,10 +244,15 @@ local function open_diff(b: Block, row: model.Row)
 	}))
 end
 
--- Enter/space and clicks on a row.
+-- Enter/space and clicks on a row. In a wide pane the diff is the hero column,
+-- so a click there loads it rather than folding it away again.
 local function activate(b: Block, row: model.Row)
 	if row.kind == "commit" and row.sha then
 		toggle_commit(b, row.sha)
+	elseif b.cx.cols >= view.WIDE then
+		if not b.state.diffs[row.id] then
+			load_diff(b, row)
+		end
 	else
 		toggle_diff(b, row)
 	end
@@ -298,6 +313,13 @@ local def: BlockDef<model.State> = {
 			end
 			state.root = root
 			remember_root(cx.pane, root)
+			-- `user.name` lets the commit rows leave out the author when it is you.
+			git.run(root, { "config", "--get", "user.name" }, git.FAST_MS, function(r)
+				if alive(cx.pane) and r.status == 0 then
+					state.me = (string.gsub(r.stdout, "%s+$", ""))
+					cx:render()
+				end
+			end)
 			refresh(b)
 			poll(b)
 		end)
@@ -314,7 +336,7 @@ local def: BlockDef<model.State> = {
 	end,
 
 	view = function(state, cx)
-		local v, ids = view.build(state)
+		local v, ids = view.build(state, cx.cols)
 		local b = blocks[cx.pane]
 		if b then
 			b.ids = ids
@@ -346,6 +368,8 @@ local def: BlockDef<model.State> = {
 			elseif row.sha then
 				toggle_commit(b, row.sha)
 			end
+		elseif name == "f" then
+			open_full(b)
 		elseif name == "e" and row and row.kind == "file" then
 			edit_file(b, row)
 		elseif name == "y" and row then
@@ -380,7 +404,7 @@ local def: BlockDef<model.State> = {
 				if ev.ev == "activate" then
 					open_diff(b, row)
 				else
-					toggle_diff(b, row)
+					activate(b, row)
 				end
 			end
 		elseif ev.ev == "action" and ev.act == "file" then
@@ -390,7 +414,7 @@ local def: BlockDef<model.State> = {
 				if has_mod(ev.mods, { "alt", "meta" }) then
 					edit_file(b, row)
 				else
-					toggle_diff(b, row)
+					activate(b, row)
 				end
 			end
 		elseif ev.ev == "action" and ev.act == "diff" then
@@ -399,9 +423,14 @@ local def: BlockDef<model.State> = {
 				state.sel = row.id
 				open_diff(b, row)
 			end
+		elseif ev.ev == "action" and ev.act == "commit" and type(ev.value) == "string" then
+			state.sel = model.commit_row_id(ev.value)
+			toggle_commit(b, ev.value)
 		elseif ev.ev == "action" and ev.act == "base" and type(ev.value) == "string" then
 			state.base_pref = ev.value
 			refresh(b)
+		elseif ev.ev == "action" and ev.act == "base-next" then
+			cycle_base(b, 1)
 		end
 	end,
 

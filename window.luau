@@ -1,8 +1,11 @@
 --!strict
--- Window half: `plugin.branch-changes.open` ("Show branch changes") opens the
--- branch-changes block beside the focused pane for that pane's worktree, or
--- focuses the one already showing it. Other plugins (tern-worktrees) may run
--- the action by name; nothing here depends on them.
+-- Window half: two commands and the plugin's link route.
+--   `plugin.branch-changes.open` opens the sidebar block beside the focused
+--   pane for that pane's worktree, or focuses the one already showing it;
+--   `plugin.branch-changes.open_full` opens the same block in its own tab,
+--   where it lays out full width with the diff beside the list.
+-- Other plugins (tern-worktrees) may run either action by name; nothing here
+-- depends on them.
 
 local util = require("./lib/util")
 local link = require("./lib/link")
@@ -35,6 +38,15 @@ local function existing(cx: WindowCx, root: string): number?
 	return nil
 end
 
+-- The same block in its own tab: the pane is wide, so the view lays itself out
+-- with the file list on the left and the selected diff on the right.
+local function open_full(cx: WindowCx, root: string)
+	local pane = cx.layout:new_tab({ block = KIND, args = { root }, cwd = root })
+	if pane == nil then
+		cx:toast("error", "Branch Changes isn't loaded on this host", "Run `tern plugin reload` and check `tern plugin list`.")
+	end
+end
+
 local function open_beside(cx: WindowCx, focused: number?, root: string)
 	local found = existing(cx, root)
 	if found then
@@ -53,34 +65,56 @@ local function open_beside(cx: WindowCx, focused: number?, root: string)
 	end
 end
 
+-- The directory to show changes for: the focused pane's, or a file block's folder.
+local function focused_dir(cx: WindowCx): (string?, number?, PaneInfo?)
+	local focused = cx.session:focused()
+	local info = if focused then cx.session:pane(focused) else nil
+	local dir: string? = if info then info.cwd else nil
+	if info and (dir == nil or dir == "") and info.path then
+		-- A file block has no shell directory; use the file's folder.
+		dir = if info.kind == "file" then string.match(info.path, "^(.*)/[^/]*$") else info.path
+	end
+	return dir, focused, info
+end
+
+-- Resolves `dir`'s worktree root, then hands it to `use`. When git can't answer
+-- on this machine (a remote host), the block resolves the root itself.
+local function with_root(cx: WindowCx, title: string, use: (WindowCx, number?, string) -> ())
+	local dir, focused = focused_dir(cx)
+	if dir == nil or dir == "" then
+		cx:toast("info", title, "Focus a pane inside a git worktree first.")
+		return
+	end
+	local at: string = dir
+	tern.process.run({ "git", "-C", at, "rev-parse", "--show-toplevel" }, { timeout_ms = 3000 }, function(r, wcx)
+		if wcx == nil then
+			return
+		end
+		use(wcx, focused, if r.status == 0 then util.trim(r.stdout) else at)
+	end)
+end
+
 tern.command({
 	id = "open",
 	title = "Show branch changes",
 	icon = "git-branch",
 	keys = { "ctrl+alt+shift+b" },
 	run = function(cx)
-		local focused = cx.session:focused()
-		local info = if focused then cx.session:pane(focused) else nil
+		local _, _, info = focused_dir(cx)
 		if info and info.block == KIND then
 			return -- already looking at it
 		end
-		local dir: string? = if info then info.cwd else nil
-		if info and (dir == nil or dir == "") and info.path then
-			-- A file block has no shell directory; use the file's folder.
-			dir = if info.kind == "file" then string.match(info.path, "^(.*)/[^/]*$") else info.path
-		end
-		if dir == nil or dir == "" then
-			cx:toast("info", "Show branch changes", "Focus a pane inside a git worktree first.")
-			return
-		end
-		-- Resolve the worktree root here so an existing block is found by root.
-		-- When git can't answer on this machine (a remote host), the block resolves it.
-		tern.process.run({ "git", "-C", dir, "rev-parse", "--show-toplevel" }, { timeout_ms = 3000 }, function(r, wcx)
-			if wcx == nil then
-				return
-			end
-			local root = if r.status == 0 then util.trim(r.stdout) else dir
-			open_beside(wcx, focused, root)
+		with_root(cx, "Show branch changes", open_beside)
+	end,
+})
+
+tern.command({
+	id = "open_full",
+	title = "Branch changes (full view)",
+	icon = "git-branch",
+	run = function(cx)
+		with_root(cx, "Branch changes (full view)", function(wcx, _focused, root)
+			open_full(wcx, root)
 		end)
 	end,
 })
@@ -88,6 +122,12 @@ tern.command({
 -- `tern-branch-changes://diff?…`, followed by the list block's `cx:open`:
 -- focus the diff block already showing that file, else open one beside.
 tern.route.link(function(req, cx)
+	-- `f` in the block: the same worktree, full width in a new tab.
+	local root = link.decode_view(req.url)
+	if root then
+		open_full(cx, root)
+		return { handled = true }
+	end
 	local target = link.decode(req.url)
 	if target == nil then
 		return nil
