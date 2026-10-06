@@ -749,13 +749,15 @@ test("the window route opens the file in place of the diff pane", function()
 	__reload("window")
 	local route = S.routes[1]
 	local wcx, seen = edit_cx(true)
-	local decision = route({ url = link.edit_url("/w/repo/x.lua", 12), pane = 9, mods = {} }, wcx)
+	wcx.session.pane = function(_self, id)
+		return if id == 9 then { pane = 9, block = "branch-changes.diff" } else nil
+	end
+	local decision = route({ url = link.edit_url("/w/repo/x.lua", 12, 9), pane = 9, mods = {} }, wcx)
 	eq(decision.handled, true)
-	eq(seen.focused, 9, "the diff pane is the one replaced")
 	eq(seen.opened.path, "/w/repo/x.lua")
-	eq(seen.opened.opts.how, "replace")
-	eq(seen.opened.opts.line, 12)
-	eq(#seen.closed, 0, "replacing leaves nothing to close")
+	eq(seen.opened.opts.line, 12, "the caret goes to the first change")
+	eq(seen.opened.opts.how, nil, "no replace: it goes by the focused block, which is not ours to assume")
+	eq(seen.closed[1], 9, "and the diff pane is taken away, so the file ends up where it was")
 end)
 
 test("a link names its own pane, since a host open arrives without one", function()
@@ -769,28 +771,27 @@ test("a link names its own pane, since a host open arrives without one", functio
 		return if id == 9 then { pane = 9, block = "branch-changes.diff" } else nil
 	end
 	route({ url = link.edit_url("/w/repo/x.lua", 12, 9), pane = nil, mods = {} }, wcx)
-	eq(seen.focused, 9, "the pane from the link is the one acted on")
-	eq(seen.opened.opts.how, "replace")
+	eq(seen.closed[1], 9, "the pane from the link is the one taken away")
 	-- A pane this window doesn't show is ignored rather than acted on blindly.
 	local other, unseen = edit_cx(true)
 	other.session.pane = function()
 		return nil
 	end
 	route({ url = link.edit_url("/w/repo/x.lua", nil, 404), pane = nil, mods = {} }, other)
-	eq(unseen.focused, nil)
-	eq(unseen.opened.opts.how, "default")
+	eq(#unseen.closed, 0)
 end)
 
-test("if focus has not landed, the file opens and the diff pane closes behind it", function()
+test("a diff pane this window no longer shows is left alone", function()
 	S.routes = {}
 	__reload("window")
 	local route = S.routes[1]
-	-- Focus not taking effect in time must never turn `replace` on whatever else
-	-- is focused, which could be the user's own editor.
-	local wcx, seen = edit_cx(false)
-	route({ url = link.edit_url("/w/repo/x.lua", 12), pane = 9, mods = {} }, wcx)
-	eq(seen.opened.opts.how, "default", "it does not replace a pane it cannot name")
-	eq(seen.closed[1], 9, "and clears the diff away itself")
+	local wcx, seen = edit_cx(true)
+	wcx.session.pane = function()
+		return nil -- the pane went away between the keypress and the route
+	end
+	route({ url = link.edit_url("/w/repo/x.lua", 12, 9), pane = nil, mods = {} }, wcx)
+	eq(seen.opened.path, "/w/repo/x.lua", "the file still opens")
+	eq(#seen.closed, 0, "and nothing else is closed in its place")
 end)
 
 test("diff block with bad args shows an error instead of failing", function()

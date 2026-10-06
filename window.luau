@@ -140,27 +140,22 @@ local function link_pane(cx: WindowCx, named: number?, from: number?): number?
 	return from
 end
 
--- Opens `path` where the diff block was. `replace` goes by the focused block,
--- so it is only used once focus is confirmed to be on that pane; otherwise the
--- file opens normally and the diff pane is closed behind it. Either way the
--- editor ends up where the diff was, and a failed open leaves the diff alone.
+-- Opens `path` and takes the diff block away, so the file ends up where the
+-- diff was. It does not ask for Tern's `replace` placement: that goes by the
+-- focused block, and asking a documents open to replace left the file beside
+-- the diff with the diff still there. Opening and then closing is the same
+-- result by a route that cannot half-happen; a failed open closes nothing.
 -- `cx.docs` carries the line but is desktop-only, so a plain open stands in.
 local function edit_here(cx: WindowCx, pane: number?, path: string, line: number?)
-	if pane then
-		cx.layout:focus(pane)
-	end
-	local replacing = pane ~= nil and cx.session:focused() == pane
-	local how: How = if replacing then "replace" else "default"
-	local ok, opened: any = pcall(function()
-		return cx.docs:open(path, { how = how, line = line })
+	local landed = false
+	local ok = pcall(function()
+		landed = cx.docs:open(path, { line = line }) ~= nil
 	end)
 	if not ok then
-		-- No documents cx here (not a desktop window): the line is lost, but the
-		-- file still opens, and `cx:open` raises nothing worth catching.
-		cx:open(path, how)
+		cx:open(path)
+		landed = true
 	end
-	local landed = if ok then opened ~= nil else true
-	if landed and not replacing and pane then
+	if landed and pane and cx.session:pane(pane) then
 		cx.layout:close(pane)
 	end
 end
