@@ -887,30 +887,48 @@ test("a diff block lands beside the roomiest pane, not inside the sidebar", func
 	eq(tabbed.block, "branch-changes.diff", "falls back to its own tab")
 end)
 
-test("the window route opens the full view in its own tab", function()
+test("the full view zooms this pane instead of opening a second one", function()
 	S.routes = {}
 	__reload("window")
 	local route = S.routes[1]
-	local launched: any = nil
+	local ran: { string } = {}
+	local focused: number? = nil
+	local zoomed = false
 	local wcx = {
 		session = {
 			panes = function(_self)
 				return {}
 			end,
+			tab_of = function(_self, _pane)
+				return 1
+			end,
+			layout = function(_self, _tab)
+				return { tab = 1, root = { pane = 4 }, zoomed = zoomed }
+			end,
+			pane = function(_self, _id)
+				return nil
+			end,
 		},
 		layout = {
-			new_tab = function(_self, launch)
-				launched = launch
-				return 9
+			focus = function(_self, pane)
+				focused = pane
 			end,
-			focus = function(_self, _pane) end,
+			new_tab = function(_self, _launch)
+				error("the full view must not open a second pane")
+			end,
 		},
+		command = function(_self, id)
+			table.insert(ran, id)
+		end,
 	}
-	local decision = route({ url = link.view_url("/w/repo"), pane = 1, mods = {} }, wcx)
+	local decision = route({ url = link.view_url("/w/repo"), pane = 4, mods = {} }, wcx)
 	eq(decision.handled, true)
-	eq(launched.block, "branch-changes.view")
-	eq(launched.args[1], "/w/repo")
-	eq(launched.cwd, "/w/repo")
+	eq(focused, 4, "the block's own pane is the one zoomed")
+	eq(ran[1], "zoom")
+	-- Pressing f again puts it back, so there is no way to get stuck zoomed.
+	zoomed = true
+	route({ url = link.view_url("/w/repo"), pane = 4, mods = {} }, wcx)
+	eq(#ran, 2, "f toggles")
 	assert(S.commands.open_full, "palette entry for the full view")
 end)
 

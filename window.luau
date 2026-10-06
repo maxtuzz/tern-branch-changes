@@ -2,8 +2,8 @@
 -- Window half: two commands and the plugin's link route.
 --   `plugin.branch-changes.open` opens the sidebar block beside the focused
 --   pane for that pane's worktree, or focuses the one already showing it;
---   `plugin.branch-changes.open_full` opens the same block in its own tab,
---   where it lays out full width with the diff beside the list.
+--   `plugin.branch-changes.open_full` (and `f` in the block) zooms that same
+--   block, which makes it wide enough to lay out with the diff beside the list.
 -- Other plugins (tern-worktrees) may run either action by name; nothing here
 -- depends on them.
 
@@ -38,20 +38,14 @@ local function existing(cx: WindowCx, root: string): number?
 	return nil
 end
 
--- The same block in its own tab: the pane is wide, so the view lays itself out
--- with the file list on the left and the selected diff on the right.
-local function open_full(cx: WindowCx, root: string)
-	local pane = cx.layout:new_tab({ block = KIND, args = { root }, cwd = root })
-	if pane == nil then
-		cx:toast("error", "Branch Changes isn't loaded on this host", "Run `tern plugin reload` and check `tern plugin list`.")
-	end
-end
-
-local function open_beside(cx: WindowCx, focused: number?, root: string)
+-- Shows the block for `root`: the one already open, else a new split beside the
+-- focused pane. There is only ever one per worktree, so the full view is the
+-- same pane zoomed, not a second copy with its own selection and open diffs.
+local function open_beside(cx: WindowCx, focused: number?, root: string): number?
 	local found = existing(cx, root)
 	if found then
 		cx.layout:focus(found)
-		return
+		return found
 	end
 	local pane: number? = nil
 	if focused then
@@ -62,6 +56,20 @@ local function open_beside(cx: WindowCx, focused: number?, root: string)
 	end
 	if pane == nil then
 		cx:toast("error", "Branch Changes isn't loaded on this host", "Run `tern plugin reload` and check `tern plugin list`.")
+	end
+	return pane
+end
+
+-- The full view is Tern's own zoom: the pane fills its tab, so the block sees a
+-- wide `cx.cols` and lays out with the diff beside the list. `toggle` is what
+-- `f` does, so pressing it again puts the pane back.
+local function zoom(cx: WindowCx, pane: number, toggle: boolean)
+	cx.layout:focus(pane)
+	local tab = cx.session:tab_of(pane)
+	local layout = if tab then cx.session:layout(tab) else nil
+	local zoomed = layout ~= nil and layout.zoomed == true
+	if toggle or not zoomed then
+		cx:command("zoom")
 	end
 end
 
@@ -113,8 +121,11 @@ tern.command({
 	title = "Branch changes (full view)",
 	icon = "git-branch",
 	run = function(cx)
-		with_root(cx, "Branch changes (full view)", function(wcx, _focused, root)
-			open_full(wcx, root)
+		with_root(cx, "Branch changes (full view)", function(wcx, focused, root)
+			local pane = open_beside(wcx, focused, root)
+			if pane then
+				zoom(wcx, pane, false)
+			end
 		end)
 	end,
 })
@@ -175,10 +186,13 @@ end
 -- `tern-branch-changes://diff?…`, followed by the list block's `cx:open`:
 -- focus the diff block already showing that file, else open one where it fits.
 tern.route.link(function(req, cx)
-	-- `f` in the block: the same worktree, full width in a new tab.
+	-- `f` in the block: zoom this pane, or put it back when it is already zoomed.
 	local root = link.decode_view(req.url)
 	if root then
-		open_full(cx, root)
+		local pane = req.pane or existing(cx, root)
+		if pane then
+			zoom(cx, pane, true)
+		end
 		return { handled = true }
 	end
 	local target = link.decode(req.url)

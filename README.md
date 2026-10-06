@@ -43,12 +43,12 @@ Commits 3
 - **Header:** two rows that never wrap. The branch name takes the first row with the base as one chip on its right; click it (or press `b`) to cycle to the next base. The second row holds short status chips: `↑n`/`↓n` for ahead and behind, the uncommitted count, and the branch totals. Every chip carries a tooltip with the long form.
 - **File rows:** the file name is the label, its folder dim beside it, the icon tinted by status (modified warning, added success, deleted error, renamed/copied info, conflict error, untracked muted). `+n -n` and the status letter are right-aligned, and the tooltip gives the full path and status.
 - **Live work:** a file whose status or line counts changed since the last refresh is marked `just now` and floats to the top of its group for three minutes, so an agent's edits are visible as they land. The footer carries a live timer showing how old the picture is.
-- **Commits:** one line each, no card borders: subject (truncated) with the age right-aligned. The SHA waits in the tooltip until the pane is wide, because a row's value column reserves up to 40% of the width and that comes straight out of the subject. Unpushed commits are toned. The author appears only when it isn't this repo's `user.name`. Clicking a commit expands its files as the same file rows.
+- **Commits:** one line each, no card borders: subject (truncated) with the age right-aligned. The icon stays the same whether a commit is expanded or not, because an icon name Tern doesn't know draws nothing and the empty slot shifts the row. The SHA waits in the tooltip until the pane is wide, because a row's value column reserves up to 40% of the width and that comes straight out of the subject. Unpushed commits are toned. The author appears only when it isn't this repo's `user.name`. Clicking a commit expands its files as the same file rows.
 - **Footer:** hints are added only while they fit the pane, so nothing wraps mid-word; a narrow sidebar simply shows fewer.
 
 ### Full view
 
-**Branch changes (full view)** in the palette (`plugin.branch-changes.open_full`), or `f` in the sidebar block, opens the same block in its own tab. At 100 cells or wider it lays out as two columns: the list on the left, and the selected file's diff as the hero on the right, with a chip to pop that diff into its own pane.
+**Branch changes (full view)** in the palette (`plugin.branch-changes.open_full`), or `f` in the block, zooms the pane with Tern's own zoom so it fills its tab. Press `f` again to put it back. There is only ever one block per worktree, so the full view is that same pane with more room, keeping your selection and open diffs — not a second copy. At 100 cells or wider it lays out as two columns: the list on the left, and the selected file's diff as the hero on the right, with a chip to pop that diff into its own pane.
 
 ```
 feat/login-redirect  [origin/dev]        │ app.ts  src
@@ -70,7 +70,7 @@ In the full view a click loads the diff into the hero instead of folding it away
 | `y` | Copy the selected path or commit SHA |
 | `r` | Refresh |
 | `b` / `B`, click the base chip | Cycle the base ref |
-| `f` | Open this worktree in the full view (a new tab) |
+| `f` | Zoom the pane to the full view, and back again |
 | `escape` | Close all inline diffs |
 
 ### File diff block
@@ -149,6 +149,7 @@ The tests run the real `host.luau` against a stub `tern` (`tests/stub.luau`) and
 - **A row centres its children** (`align-items: center` in Tern's sheet), which in the full view pushed the diff column half a screen down beside a tall list. The plugin sheet sets `flex-start` on the split.
 - **A region root is the region itself**: its `role` goes on the region element and its own content isn't drawn, so the split row has to be a child of a `col` root rather than the root.
 - **No pane widths.** `PaneInfo` carries no size, so "which pane is roomiest" is worked out from the tab's split-tree ratios.
+- **A small icon set.** There is `chev-r` but no down chevron, so a row can't show open/closed state by swapping chevrons; unknown names silently draw nothing.
 - **No hover state.** Plugins see clicks, not hovers, so anything "on hover" is a `title` tooltip instead; that is where the long forms of the chips and rows live.
 - **No menus for a plugin's own nodes.** `actions` carries `click` and `dblclick`, so the base picker is one chip that cycles rather than a dropdown.
 - **Card heads take spans only**, which is one reason commits are list rows now: a row gives real truncation and a right-aligned value, which a card head does not.

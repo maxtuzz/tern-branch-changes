@@ -319,7 +319,10 @@ local function commit_item(state: model.State, c: parse.Commit, unpushed: boolea
 		label = { ui.span(c.subject, if state.open[c.sha] then "strong" else "") },
 		detail = if #detail > 0 then detail else nil,
 		value = v,
-		icon = if state.open[c.sha] then "chev-d" else "git-branch",
+		-- One icon, open or closed: a name Tern doesn't know draws nothing, and the
+		-- empty slot shifts the whole row left. `commit` and `chev-r` exist; there
+		-- is no down chevron, so expansion shows in the label and the files below.
+		icon = "commit",
 		tone = if unpushed then "warning" else "muted",
 		title = title,
 	}
