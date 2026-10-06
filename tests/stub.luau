@@ -62,6 +62,14 @@ end
 function ui.node(k, p, c)
 	return node(k, p, c)
 end
+function ui.el(tag, p, c)
+	local props = {}
+	for k, v in p or {} do
+		props[k] = v
+	end
+	props.tag = tag
+	return node("el", props, c)
+end
 function ui.list(items)
 	local c = {}
 	for i, it in items do

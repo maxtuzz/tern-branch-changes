@@ -16,8 +16,11 @@ local ui = tern.ui
 
 local M = {}
 
--- Lists past 200 items virtualize and drop item actions; keep each list under that.
+-- Lists past 200 items virtualize and drop their rows' actions, so the commit
+-- list is chunked under that. File rows are elements, not list items, and are
+-- capped instead: a few hundred rows is already more than anyone reads.
 local CHUNK = 150
+local RENDER_CAP = 400
 
 -- Width thresholds in cells. Below WIDE the view is one column; at or above it
 -- the diff moves into its own column beside the list.
@@ -85,76 +88,77 @@ local function fixed(node: Node): Node
 	return with(node, { shrink = 0 })
 end
 
--- Right-hand value: "+n -n" then the status letter in its tone, as Source
--- Control panels show it. The counts are toned, not marked with the `ins`/`del`
--- span tokens: those mean "text added/removed in a diff", so `del` strikes the
--- number through.
--- `↺` before the counts: a link span, because a span can carry an `href` but
--- not an `actions`, and the row's own click would win over it anyway.
-local REVERT = "↺"
+-- A file row, built from elements rather than a `list` item. A list row draws
+-- one icon, on the left, and takes no children, so the revert control could
+-- only be a character in its text. Built this way the row holds a real `icon`
+-- node with its own click. Tern does not let a plugin's element borrow its own
+-- `sf-` class names, so every part is styled by this plugin's sheet, which
+-- copies the metrics of Tern's list rows.
+local function file_row(state: model.State, f: parse.FileEntry, row_id: string, open: boolean, lay: Layout, kind: string): Node
+	local dir, base = util.split_path(f.path)
+	local status = STATUS_NAME[f.code] or f.code
+	local armed = state.armed == row_id
+	local can_discard = kind ~= "commit"
 
-local function value(f: parse.FileEntry, lay: Layout, row_id: string?, armed: boolean, pane: number?): { Span }
-	local spans: { Span } = {}
-	if row_id then
-		table.insert(spans, ui.link(REVERT, link.discard_url(row_id, pane), if armed then "error strong" else "muted"))
-		table.insert(spans, ui.span(" "))
+	local detail: { string } = {}
+	if dir ~= "" then
+		table.insert(detail, string.sub(dir, 1, -2))
 	end
+	if f.orig and not lay.compact then
+		table.insert(detail, "from " .. f.orig)
+	end
+	local since = model.fresh_age(state, row_id)
+	if armed then
+		detail = { if kind == "untracked" then "again to delete" else "again to discard" }
+	elseif since then
+		table.insert(detail, if since < 60 then "just now" else util.age(since) .. " ago")
+	end
+
+	local counts: { Node } = {}
 	if f.add == nil and f.del == nil then
 		if f.code ~= "?" then
-			table.insert(spans, ui.span(if lay.compact then "bin" else "binary", "muted"))
+			table.insert(counts, ui.el("span", { class = "bc-bin", text = if lay.compact then "bin" else "binary" }))
 		end
 	else
 		if (f.add or 0) > 0 then
-			table.insert(spans, ui.span("+" .. tostring(f.add), "success num"))
+			table.insert(counts, ui.el("span", { class = "bc-ins", text = "+" .. tostring(f.add) }))
 		end
 		if (f.del or 0) > 0 then
-			table.insert(spans, ui.span((if #spans > 0 then " -" else "-") .. tostring(f.del), "error num"))
+			table.insert(counts, ui.el("span", { class = "bc-del", text = "-" .. tostring(f.del) }))
 		end
 	end
-	table.insert(spans, ui.span((if #spans > 0 then " " else "") .. f.code, "strong " .. (STATUS_TONE[f.code] or "muted")))
-	return spans
-end
+	table.insert(counts, ui.el("span", { class = "bc-code", text = f.code }))
 
--- A file row: file name as the label, its folder (and rename source) dim beside
--- it, the icon tinted by status. A file an agent touched since the last refresh
--- carries an accent "just now", so live work stands out in the list.
-local function file_item(state: model.State, f: parse.FileEntry, row_id: string, open: boolean, lay: Layout, kind: string): { [string]: any }
-	local dir, base = util.split_path(f.path)
-	local detail: { Span } = {}
-	if dir ~= "" then
-		table.insert(detail, ui.span(string.sub(dir, 1, -2), "muted"))
-	end
-	if f.orig and not lay.compact then
-		table.insert(detail, ui.span((if dir ~= "" then "  " else "") .. "from " .. f.orig, "muted"))
-	end
-	local since = model.fresh_age(state, row_id)
-	if since then
-		local when = if since < 60 then "just now" else util.age(since) .. " ago"
-		table.insert(detail, ui.span((if #detail > 0 then "  " else "") .. when, "accent"))
-	end
-	local title = STATUS_NAME[f.code] or f.code
-	-- Armed for discard: the row says so plainly, since the next press is final.
-	if state.armed == row_id then
-		local gone = if kind == "untracked" then "delete" else "discard"
-		return {
-			label = { ui.span(base, "strong") },
-			-- Neutral wording: you may have armed this with the key or the ↺.
-			detail = { ui.span("again to " .. gone, "error strong") },
-			value = value(f, lay, row_id, true, state.pane),
-			icon = "revert",
-			tone = "error",
-			title = "Press x or ⌘-click ↺ again to " .. gone .. " " .. f.path .. ", or escape to leave it alone",
-		}
-	end
-	local can_discard = kind ~= "commit"
-	return {
-		label = { ui.span(base, if open then "strong" else "") },
-		detail = if #detail > 0 then detail else nil,
-		value = value(f, lay, if can_discard then row_id else nil, false, state.pane),
-		icon = "file",
-		tone = STATUS_TONE[f.code] or "muted",
-		title = f.path .. " · " .. title .. (if can_discard then " · ⌘-click ↺ or press x to discard" else ""),
+	local parts: { Node } = {
+		ui.el("span", { class = "bc-ic", key = "ic" }, { ui.node("icon", { name = "file" }) }),
+		ui.el("span", { class = "bc-name" .. (if open or armed then " bc-open" else ""), key = "name", text = base }),
+		ui.el("span", { class = "bc-dir", key = "dir", text = table.concat(detail, "  ") }),
+		ui.el("span", { class = "bc-counts", key = "n" }, counts),
 	}
+	if can_discard then
+		-- A real icon with its own action: no modifier, no glyph standing in for one.
+		table.insert(parts, ui.el("span", {
+			class = "bc-revert" .. (if armed then " on" else ""),
+			key = "revert",
+			actions = { click = "discard=" .. row_id },
+			-- Belt and braces: if the row's own click wins over its child's, the
+			-- link still reaches the block through the window's route on ⌘-click.
+			href = link.discard_url(row_id, state.pane),
+			title = if armed
+				then "Click again, or press x, to " .. (if kind == "untracked" then "delete " else "discard changes to ") .. f.path
+				else "Discard changes to " .. f.path,
+		}, { ui.node("icon", { name = "revert" }) }))
+	end
+
+	local classes = "bc-row"
+	if state.sel == row_id then
+		classes ..= " on"
+	end
+	return with(ui.el("div", { class = classes }, parts), {
+		tone = if armed then "error" else (STATUS_TONE[f.code] or "muted"),
+		actions = { click = "file=" .. row_id, dblclick = "diff=" .. row_id },
+		title = f.path .. " · " .. status,
+	})
 end
 
 local function diff_node(d: model.DiffState, path: string): Node
@@ -168,9 +172,8 @@ local function diff_node(d: model.DiffState, path: string): Node
 	return ui.diff(d.text, path)
 end
 
--- Files of one group as lists, split after every open file to show its diff
--- inline. In the wide layout the diff lives in the hero column instead, so the
--- rows stay unbroken. `parent` is the id of the node these children go under.
+-- The rows of one group, with an open file's diff inline under its row. In the
+-- wide layout the diff lives in the hero column instead, so rows stay unbroken.
 local function file_nodes(
 	state: model.State,
 	parent: string,
@@ -181,62 +184,33 @@ local function file_nodes(
 	lay: Layout
 ): { Node }
 	local out: { Node } = {}
-	local items: { { [string]: any } } = {}
-	local item_rows: { string } = {}
-	local start = 1
+	local rows: { Node } = {}
 
-	local function flush(stop: number)
-		if #items == 0 then
-			return
+	local function flush()
+		if #rows > 0 then
+			table.insert(out, with(ui.col(rows), { key = "g" .. #out, gap = "none", role = "branch-changes.rows" }))
+			rows = {}
 		end
-		local key = "l" .. start
-		local list_id = parent .. "." .. key
-		-- `ui.list` takes only label/detail/value/icon/tone; the tooltip goes on the built item.
-		local titles: { string? } = {}
-		local hints: { { string }? } = {}
-		for i, it in items do
-			titles[i], hints[i] = it.title, it.hint
-			it.title, it.hint = nil, nil
-		end
-		local listing = ui.list(items)
-		local children: { Node } = listing.c or {}
-		local selected: string? = nil
-		for i, child in children do
-			local idx = start + i - 1
-			local row_id = item_rows[i]
-			local item_id = list_id .. ".f" .. idx
-			ids[item_id] = row_id
-			with(child, {
-				key = "f" .. idx,
-				actions = { click = "file=" .. row_id, dblclick = "diff=" .. row_id },
-				title = titles[i],
-				hint = hints[i],
-			})
-			if row_id == state.sel then
-				selected = item_id
-			end
-		end
-		with(listing, { key = key, selected = selected })
-		table.insert(out, listing)
-		items, item_rows, start = {}, {}, stop + 1
 	end
 
 	for idx, f in group.files do
+		if idx > RENDER_CAP then
+			break
+		end
 		local row_id = model.file_row_id(kind, f.path, sha)
 		local d = state.diffs[row_id]
-		table.insert(items, file_item(state, f, row_id, d ~= nil, lay, kind))
-		table.insert(item_rows, row_id)
+		table.insert(rows, with(file_row(state, f, row_id, d ~= nil, lay, kind), { key = "f" .. idx }))
 		if d and not lay.wide then
-			flush(idx)
+			flush()
 			table.insert(out, with(diff_node(d, f.path), { key = "d" .. idx, role = "branch-changes.diff" }))
-		elseif #items >= CHUNK then
-			flush(idx)
 		end
 	end
-	flush(#group.files)
-	local hidden = group.total - #group.files
+	flush()
+	local _ = ids
+	local hidden = group.total - math.min(#group.files, RENDER_CAP)
 	if hidden > 0 then
-		table.insert(out, with(ui.text({ ui.span(hidden .. " more files hidden (max_files)", "muted") }), { key = "more" }))
+		local why = if #group.files > RENDER_CAP then "shown" else "hidden (max_files)"
+		table.insert(out, with(ui.text({ ui.span(hidden .. " more files not " .. why, "muted") }), { key = "more" }))
 	end
 	return out
 end

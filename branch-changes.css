@@ -20,32 +20,113 @@
 	align-items: flex-start;
 }
 
-/* The ↺ on a file row. Tern draws a link span as `.sf-link`, coloured
-   `--sf-c-link` (blue) at text size, which reads as a web link rather than a
-   destructive control — so it is restyled here: bigger, in the error colour,
-   and, like VS Code's discard button, only on the row under the pointer. The
-   selected row keeps it visible for anyone working from the keyboard, and an
-   armed row always shows it. These are Tern's structural classes, which the
-   docs say may change between versions. */
-[data-surface^='plugin.branch-changes.'] .sf-item .sf-link,
-[data-surface^='plugin.branch-changes.'] .sf-item a[href],
-[data-surface^='plugin.branch-changes.'] .sf-item .ilink {
-	font-size: 1.5em;
-	line-height: 1;
+/* File rows are elements, not list items, so they can hold a real `revert`
+   icon with its own click. A plugin's element cannot borrow Tern's own `sf-`
+   class names, so the row is styled here, copying the metrics of Tern's list
+   rows (`.sf-item` and friends) so it sits in the same rhythm. */
+[data-surface^='plugin.branch-changes.'] .bc-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	min-height: calc(var(--sf-lh) + 6px);
+	padding: 0 8px 0 10px;
+	white-space: pre;
+	color: var(--t1);
+	border-radius: 4px;
+	cursor: default;
+}
+
+[data-surface^='plugin.branch-changes.'] .bc-row:hover {
+	background-color: var(--l1);
+}
+
+[data-surface^='plugin.branch-changes.'] .bc-row.on {
+	background-color: light-dark(rgb(from var(--accent) r g b/10%), rgb(from var(--accent) r g b/16%));
+	box-shadow: inset 2px 0 0 var(--accent);
+}
+
+[data-surface^='plugin.branch-changes.'] .bc-ic {
+	display: grid;
+	place-items: center;
+	width: 16px;
+	height: 16px;
+	color: var(--tc, var(--t3));
+	flex: 0 0 auto;
+}
+
+[data-surface^='plugin.branch-changes.'] .bc-ic .ico {
+	width: 14px;
+	height: 14px;
+}
+
+[data-surface^='plugin.branch-changes.'] .bc-name {
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+[data-surface^='plugin.branch-changes.'] .bc-open {
+	font-weight: 600;
+}
+
+[data-surface^='plugin.branch-changes.'] .bc-dir {
+	flex: 1 1 0;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: var(--t3);
+}
+
+[data-surface^='plugin.branch-changes.'] .bc-counts {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	flex: 0 0 auto;
+	max-width: 40%;
+	overflow: hidden;
+	color: var(--t3);
+	font-variant-numeric: tabular-nums;
+}
+
+[data-surface^='plugin.branch-changes.'] .bc-ins {
+	color: var(--sf-c-ins);
+}
+
+[data-surface^='plugin.branch-changes.'] .bc-del {
+	color: var(--sf-c-del);
+}
+
+[data-surface^='plugin.branch-changes.'] .bc-bin {
+	color: var(--t3);
+}
+
+[data-surface^='plugin.branch-changes.'] .bc-code {
+	color: var(--tc, var(--t3));
+	font-weight: 600;
+}
+
+/* The discard control: hidden until the row is under the pointer, selected, or
+   armed — the way an editor's source-control list does it. */
+[data-surface^='plugin.branch-changes.'] .bc-revert {
+	display: grid;
+	place-items: center;
+	width: 18px;
+	height: 18px;
+	flex: 0 0 auto;
 	color: var(--sf-c-error);
-	text-decoration: none;
-	padding: 0 2px;
+	cursor: pointer;
 	opacity: 0;
 }
 
-[data-surface^='plugin.branch-changes.'] .sf-item:hover .sf-link,
-[data-surface^='plugin.branch-changes.'] .sf-item:hover a[href],
-[data-surface^='plugin.branch-changes.'] .sf-item:hover .ilink,
-[data-surface^='plugin.branch-changes.'] .sf-item.sel .sf-link,
-[data-surface^='plugin.branch-changes.'] .sf-item.sel a[href],
-[data-surface^='plugin.branch-changes.'] .sf-item.sel .ilink,
-[data-surface^='plugin.branch-changes.'] .sf-item[data-tone='error'] .sf-link,
-[data-surface^='plugin.branch-changes.'] .sf-item[data-tone='error'] a[href],
-[data-surface^='plugin.branch-changes.'] .sf-item[data-tone='error'] .ilink {
+[data-surface^='plugin.branch-changes.'] .bc-row:hover .bc-revert,
+[data-surface^='plugin.branch-changes.'] .bc-row.on .bc-revert,
+[data-surface^='plugin.branch-changes.'] .bc-revert.on {
 	opacity: 1;
+}
+
+[data-surface^='plugin.branch-changes.'] .bc-revert .ico {
+	width: 14px;
+	height: 14px;
 }
