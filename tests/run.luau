@@ -689,13 +689,12 @@ test("first_hunk_line reads the new file's starting line", function()
 	eq(p.first_hunk_line("diff --git a/x b/x\nBinary files differ\n"), nil)
 end)
 
-test("the window route opens the file in place of the diff pane", function()
-	S.routes = {}
-	__reload("window")
-	local route = S.routes[1]
-	local opened: any = nil
-	local focused: number? = nil
-	local wcx = {
+-- A window double, with `takes_focus` deciding whether focus lands before the open.
+local function edit_cx(takes_focus: boolean): (any, { [string]: any })
+	local seen: { [string]: any } = { closed = {} }
+	local focus: number? = nil
+	local wcx
+	wcx = {
 		session = {
 			panes = function(_self)
 				return {}
@@ -710,10 +709,19 @@ test("the window route opens the file in place of the diff pane", function()
 			pane = function()
 				return nil
 			end,
+			focused = function()
+				return focus
+			end,
 		},
 		layout = {
 			focus = function(_self, pane)
-				focused = pane
+				seen.focused = pane
+				if takes_focus then
+					focus = pane
+				end
+			end,
+			close = function(_self, pane)
+				table.insert(seen.closed, pane)
 			end,
 			new_tab = function()
 				return 1
@@ -724,18 +732,42 @@ test("the window route opens the file in place of the diff pane", function()
 		},
 		docs = {
 			open = function(_self, path, opts)
-				opened = { path = path, opts = opts }
+				seen.opened = { path = path, opts = opts }
 				return 21
 			end,
 		},
 		command = function() end,
+		open = function(_self, target, how)
+			seen.plain = { target = target, how = how }
+		end,
 	}
+	return wcx, seen
+end
+
+test("the window route opens the file in place of the diff pane", function()
+	S.routes = {}
+	__reload("window")
+	local route = S.routes[1]
+	local wcx, seen = edit_cx(true)
 	local decision = route({ url = link.edit_url("/w/repo/x.lua", 12), pane = 9, mods = {} }, wcx)
 	eq(decision.handled, true)
-	eq(focused, 9, "the diff pane is the one replaced")
-	eq(opened.path, "/w/repo/x.lua")
-	eq(opened.opts.how, "replace")
-	eq(opened.opts.line, 12)
+	eq(seen.focused, 9, "the diff pane is the one replaced")
+	eq(seen.opened.path, "/w/repo/x.lua")
+	eq(seen.opened.opts.how, "replace")
+	eq(seen.opened.opts.line, 12)
+	eq(#seen.closed, 0, "replacing leaves nothing to close")
+end)
+
+test("if focus has not landed, the file opens and the diff pane closes behind it", function()
+	S.routes = {}
+	__reload("window")
+	local route = S.routes[1]
+	-- Focus not taking effect in time must never turn `replace` on whatever else
+	-- is focused, which could be the user's own editor.
+	local wcx, seen = edit_cx(false)
+	route({ url = link.edit_url("/w/repo/x.lua", 12), pane = 9, mods = {} }, wcx)
+	eq(seen.opened.opts.how, "default", "it does not replace a pane it cannot name")
+	eq(seen.closed[1], 9, "and clears the diff away itself")
 end)
 
 test("diff block with bad args shows an error instead of failing", function()

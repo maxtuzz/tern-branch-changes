@@ -130,6 +130,31 @@ tern.command({
 	end,
 })
 
+-- Opens `path` where the diff block was. `replace` goes by the focused block,
+-- so it is only used once focus is confirmed to be on that pane; otherwise the
+-- file opens normally and the diff pane is closed behind it. Either way the
+-- editor ends up where the diff was, and a failed open leaves the diff alone.
+-- `cx.docs` carries the line but is desktop-only, so a plain open stands in.
+local function edit_here(cx: WindowCx, pane: number?, path: string, line: number?)
+	if pane then
+		cx.layout:focus(pane)
+	end
+	local replacing = pane ~= nil and cx.session:focused() == pane
+	local how: How = if replacing then "replace" else "default"
+	local ok, opened: any = pcall(function()
+		return cx.docs:open(path, { how = how, line = line })
+	end)
+	if not ok then
+		-- No documents cx here (not a desktop window): the line is lost, but the
+		-- file still opens, and `cx:open` raises nothing worth catching.
+		cx:open(path, how)
+	end
+	local landed = if ok then opened ~= nil else true
+	if landed and not replacing and pane then
+		cx.layout:close(pane)
+	end
+end
+
 -- Width share of every tiled pane in `tree`, as a fraction of the tab.
 local function shares(tree: any, width: number, out: { [number]: number })
 	if tree == nil then
@@ -195,20 +220,11 @@ tern.route.link(function(req, cx)
 		end
 		return { handled = true }
 	end
-	-- `e` or the edit chip in a diff block: put the file in that pane's place,
-	-- at the line the diff starts on. `cx.docs` is desktop-only, so a plain open
-	-- stands in for it elsewhere.
+	-- `e` or the edit chip in a diff block: put the file in that pane's place, at
+	-- the line the diff starts on.
 	local path, line = link.decode_edit(req.url)
 	if path then
-		if req.pane then
-			cx.layout:focus(req.pane)
-		end
-		local ok = pcall(function()
-			cx.docs:open(path, { how = "replace", line = line })
-		end)
-		if not ok then
-			cx:open(path, "replace")
-		end
+		edit_here(cx, req.pane, path, line)
 		return { handled = true }
 	end
 	-- The ↺ in a file row. Spans can only carry links, so the window hands the
