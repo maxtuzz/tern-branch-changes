@@ -9,6 +9,7 @@ local M = {}
 M.SCHEME = "tern-branch-changes"
 M.PREFIX = M.SCHEME .. "://diff?"
 M.VIEW_PREFIX = M.SCHEME .. "://view?"
+M.DISCARD_PREFIX = M.SCHEME .. "://discard?"
 
 export type DiffLink = {
 	root: string,
@@ -116,6 +117,25 @@ function M.decode_view(url: string): string?
 	end
 	local path = decode(root)
 	return if path ~= "" then path else nil
+end
+
+-- `tern-branch-changes://discard?row=…`: the ↺ a file row carries. A span can
+-- hold a link but not an action, and a list row's own click wins over its
+-- parts, so this is how a per-row control reaches the block at all.
+function M.discard_url(row_id: string): string
+	return M.DISCARD_PREFIX .. "row=" .. encode(row_id)
+end
+
+function M.decode_discard(url: string): string?
+	if string.sub(url, 1, #M.DISCARD_PREFIX) ~= M.DISCARD_PREFIX then
+		return nil
+	end
+	local row = string.match(string.sub(url, #M.DISCARD_PREFIX + 1), "^row=([^&]+)")
+	if row == nil then
+		return nil
+	end
+	local id = decode(row)
+	return if id ~= "" then id else nil
 end
 
 -- Identity of a diff view, for focusing an open block instead of opening another.

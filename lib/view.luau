@@ -10,6 +10,7 @@
 local parse = require("./parse")
 local model = require("./model")
 local util = require("./util")
+local link = require("./link")
 
 local ui = tern.ui
 
@@ -88,8 +89,16 @@ end
 -- Control panels show it. The counts are toned, not marked with the `ins`/`del`
 -- span tokens: those mean "text added/removed in a diff", so `del` strikes the
 -- number through.
-local function value(f: parse.FileEntry, lay: Layout): { Span }
+-- `↺` before the counts: a link span, because a span can carry an `href` but
+-- not an `actions`, and the row's own click would win over it anyway.
+local REVERT = "↺"
+
+local function value(f: parse.FileEntry, lay: Layout, row_id: string?, armed: boolean): { Span }
 	local spans: { Span } = {}
+	if row_id then
+		table.insert(spans, ui.link(REVERT, link.discard_url(row_id), if armed then "error strong" else "muted"))
+		table.insert(spans, ui.span(" "))
+	end
 	if f.add == nil and f.del == nil then
 		if f.code ~= "?" then
 			table.insert(spans, ui.span(if lay.compact then "bin" else "binary", "muted"))
@@ -130,23 +139,20 @@ local function file_item(state: model.State, f: parse.FileEntry, row_id: string,
 		return {
 			label = { ui.span(base, "strong") },
 			detail = { ui.span("press x again to " .. gone, "error strong") },
-			value = { ui.span("x", "error strong") },
-			icon = "trash",
+			value = value(f, lay, row_id, true),
+			icon = "revert",
 			tone = "error",
 			title = "Press x again to " .. gone .. ", or escape to leave it alone",
-			hint = { "x" },
 		}
 	end
+	local can_discard = kind ~= "commit"
 	return {
 		label = { ui.span(base, if open then "strong" else "") },
 		detail = if #detail > 0 then detail else nil,
-		value = value(f, lay),
+		value = value(f, lay, if can_discard then row_id else nil, false),
 		icon = "file",
 		tone = STATUS_TONE[f.code] or "muted",
-		title = f.path .. " · " .. title,
-		-- The selected row advertises the key, which is as close to a per-row
-		-- button as a list item gets: it has one icon slot and takes no children.
-		hint = if state.sel == row_id and kind ~= "commit" then { "x" } else nil,
+		title = f.path .. " · " .. title .. (if can_discard then " · ⌘-click ↺ or press x to discard" else ""),
 	}
 end
 

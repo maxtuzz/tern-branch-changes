@@ -195,6 +195,15 @@ tern.route.link(function(req, cx)
 		end
 		return { handled = true }
 	end
+	-- The ↺ in a file row. Spans can only carry links, so the window hands the
+	-- action back to the block's own `event` with the row it named.
+	local row = link.decode_discard(req.url)
+	if row then
+		if req.pane then
+			cx.session:event(req.pane, { ev = "action", act = "discard", value = row })
+		end
+		return { handled = true }
+	end
 	local target = link.decode(req.url)
 	if target == nil then
 		return nil

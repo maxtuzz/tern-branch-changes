@@ -286,7 +286,7 @@ test("view uses native chrome: chips, toned file rows, no TUI glyphs", function(
 	end)
 	eq(item.p.label[1].t, "new.lua", "file name is the label")
 	eq(item.p.tone, "warning", "modified rows are toned warning")
-	eq(item.p.title, "new.lua · modified")
+	eq(item.p.title, "new.lua · modified · ⌘-click ↺ or press x to discard")
 	local unc = find(v.main, function(n)
 		return n.p and n.p.key == "untracked"
 	end)
@@ -754,7 +754,7 @@ test("x arms a row and says what it will do; a second x discards", function()
 		return n.k == "item"
 	end)
 	eq(item.p.tone, "error")
-	eq(item.p.icon, "trash")
+	eq(item.p.icon, "revert")
 	assert(string.find(table.concat(texts(item), "|"), "press x again", 1, true), "the row says what happens next")
 	key(def, state, cx, "x")
 	eq(state.armed, nil)
@@ -840,12 +840,57 @@ test("the full view's discard chip takes two clicks too", function()
 	eq(S.ran[ran + 1], PREFIX .. "restore --staged --worktree -- new.lua")
 end)
 
-test("the selected row advertises the discard key", function()
+test("every change row carries a revert link, and no commit file does", function()
 	local def, cx, state = start()
-	local item = find(def.view(state, cx).main, function(n)
-		return n.k == "item" and n.p.hint ~= nil
+	local row = find(row_of(def.view(state, cx).main, "unstaged"), function(n)
+		return n.k == "item"
 	end)
-	eq(item.p.hint[1], "x", "a keycap on the selected row")
+	local glyph = row.p.value[1]
+	eq(glyph.t, "↺")
+	eq(glyph.href, link.discard_url("unstaged:lib/util.lua"), "the link names its row")
+	eq(row.p.icon, "file", "the status icon keeps the left slot")
+	-- A file inside a commit is history, so it gets no revert control.
+	local move = state.snap.commits[3]
+	def.event(state, { ev = "action", act = "commit", value = move.sha }, cx)
+	S.drain()
+	local in_commit = find(row_of(def.view(state, cx).main, "commits"), function(n)
+		return n.k == "item" and n.p.value and n.p.value[1] and n.p.value[1].t == "↺"
+	end)
+	eq(in_commit, nil)
+end)
+
+test("clicking the revert link hands the action back to the block", function()
+	S.routes = {}
+	__reload("window")
+	local route = S.routes[1]
+	local sent: any = nil
+	local wcx = {
+		session = {
+			panes = function(_self)
+				return {}
+			end,
+			event = function(_self, pane, ev)
+				sent = { pane = pane, ev = ev }
+			end,
+			tab_of = function(_self, _pane)
+				return nil
+			end,
+			layout = function(_self, _tab)
+				return nil
+			end,
+			pane = function(_self, _id)
+				return nil
+			end,
+		},
+		layout = { focus = function() end, new_tab = function() return 1 end, split = function() return 1 end },
+		command = function() end,
+	}
+	local decision = route({ url = link.discard_url("unstaged:lib/util.lua"), pane = 6, mods = {} }, wcx)
+	eq(decision.handled, true)
+	eq(sent.pane, 6, "back into the pane the row is in")
+	eq(sent.ev.act, "discard")
+	eq(sent.ev.value, "unstaged:lib/util.lua")
+	eq(link.decode_discard("https://example.com/discard?row=x"), nil, "other links pass")
 end)
 
 test("change counts are toned, not struck through", function()
@@ -854,7 +899,8 @@ test("change counts are toned, not struck through", function()
 	local item = find(v.main, function(n)
 		return n.k == "item"
 	end)
-	local plus, minus = item.p.value[1], item.p.value[2]
+	eq(item.p.value[1].t, "↺", "the revert control sits before the counts")
+	local plus, minus = item.p.value[3], item.p.value[4]
 	eq(plus.t, "+1")
 	eq(plus.s, "success num", "additions are toned, not `ins` (which underlines)")
 	eq(minus.t, " -1")

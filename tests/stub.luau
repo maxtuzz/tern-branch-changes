@@ -35,6 +35,9 @@ local ui = {}
 function ui.span(t, s)
 	return { t = tostring(t), s = if s ~= "" then s else nil }
 end
+function ui.link(t, href, s)
+	return { t = tostring(t), s = if s ~= "" then s else nil, href = href }
+end
 function ui.text(spans)
 	return node("text", { spans = spans })
 end
