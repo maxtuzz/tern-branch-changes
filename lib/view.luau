@@ -90,9 +90,10 @@ end
 
 -- A file row, built from elements rather than a `list` item. A list row draws
 -- one icon, on the left, and takes no children, so the revert control could
--- only be a character in its text. Built this way the row can hold a real
--- `icon` node with its own click, and it wears Tern's own `sf-item` classes, so
--- it keeps the list's metrics, selection and tones.
+-- only be a character in its text. Built this way the row holds a real `icon`
+-- node with its own click. Tern does not let a plugin's element borrow its own
+-- `sf-` class names, so every part is styled by this plugin's sheet, which
+-- copies the metrics of Tern's list rows.
 local function file_row(state: model.State, f: parse.FileEntry, row_id: string, open: boolean, lay: Layout, kind: string): Node
 	local dir, base = util.split_path(f.path)
 	local status = STATUS_NAME[f.code] or f.code
@@ -129,10 +130,10 @@ local function file_row(state: model.State, f: parse.FileEntry, row_id: string, 
 	table.insert(counts, ui.el("span", { class = "bc-code", text = f.code }))
 
 	local parts: { Node } = {
-		ui.el("span", { class = "sf-item-ic", key = "ic" }, { ui.node("icon", { name = "file" }) }),
-		ui.el("span", { class = "sf-item-label" .. (if open or armed then " bc-open" else ""), key = "name", text = base }),
-		ui.el("span", { class = "sf-item-detail", key = "dir", text = table.concat(detail, "  ") }),
-		ui.el("span", { class = "sf-item-value bc-counts", key = "n" }, counts),
+		ui.el("span", { class = "bc-ic", key = "ic" }, { ui.node("icon", { name = "file" }) }),
+		ui.el("span", { class = "bc-name" .. (if open or armed then " bc-open" else ""), key = "name", text = base }),
+		ui.el("span", { class = "bc-dir", key = "dir", text = table.concat(detail, "  ") }),
+		ui.el("span", { class = "bc-counts", key = "n" }, counts),
 	}
 	if can_discard then
 		-- A real icon with its own action: no modifier, no glyph standing in for one.
@@ -149,9 +150,9 @@ local function file_row(state: model.State, f: parse.FileEntry, row_id: string, 
 		}, { ui.node("icon", { name = "revert" }) }))
 	end
 
-	local classes = "sf-item bc-row"
+	local classes = "bc-row"
 	if state.sel == row_id then
-		classes ..= " sel"
+		classes ..= " on"
 	end
 	return with(ui.el("div", { class = classes }, parts), {
 		tone = if armed then "error" else (STATUS_TONE[f.code] or "muted"),
