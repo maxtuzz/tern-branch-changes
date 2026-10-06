@@ -618,6 +618,20 @@ local function spans_of(node: any, out: { any }?): { any }
 	return acc
 end
 
+test("Changes and Commits are both plain sections, no card ring", function()
+	local def, cx, state = start()
+	local v = def.view(state, cx)
+	local unc = find(v.main, function(n)
+		return n.p and n.p.key == "unc"
+	end)
+	eq(unc.k, "section", "Changes is a section, like Commits")
+	eq(unc.p.role, "branch-changes.uncommitted")
+	eq(unc.p.collapsible, true)
+	eq(find(v.main, function(n)
+		return n.k == "card"
+	end), nil, "nothing in the view draws a card box")
+end)
+
 test("change counts are toned, not struck through", function()
 	local def, cx, state = start()
 	local v = def.view(state, cx)

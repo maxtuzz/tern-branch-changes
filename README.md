@@ -120,6 +120,7 @@ Optional `.tern/branch-changes.json` in the worktree root. It's re-read on every
 ## How it works
 
 - `host.luau` defines the block. All git runs on the host through async `tern.process.run` with `--no-optional-locks`, `GIT_OPTIONAL_LOCKS=0`, `-z` porcelain output and timeouts. The block never takes the index lock away from your own git. (`cx.git` is window-only, so it can't be used here.)
+- `branch-changes.css` (the manifest's `styles`) trims the 22px indent and guide line Tern gives a section body, scoped to this plugin's surfaces.
 - `lib/view.luau` builds both layouts from `cx.cols`; `lib/diff_block.luau` defines the full-pane File diff block, and `lib/link.luau` encodes the links that open it.
 - `window.luau` registers the command and the `tern-branch-changes://` link route. The command resolves the focused pane's worktree root, then focuses an existing block for that root or splits a new one to the right.
 - `lib/` holds the parsers (`parse`), config validation (`config`), git calls (`git`), state and keyboard rows (`model`) and the view (`view`).

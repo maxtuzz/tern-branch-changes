@@ -1,0 +1,15 @@
+/* Tern's own sheet gives a section body `padding-left: 22px`, `margin-left: 7px`
+   and an inset guide line. In a sidebar that space is better spent on file names
+   and commit subjects, so rows sit flush under their heading instead. Scoped to
+   this plugin's own surfaces, so other plugins' sections keep Tern's spacing. */
+[data-surface^='plugin.branch-changes.'] .sf-section > .sf-section-body {
+	padding: 1px 0 5px 0;
+	margin-left: 0;
+	box-shadow: none;
+}
+
+/* The groups inside Changes are one step in, enough to read as a hierarchy
+   without pushing every row off the left edge. */
+[data-surface^='plugin.branch-changes.'] [data-role='branch-changes.uncommitted'] > .sf-section-body {
+	padding-left: 8px;
+}

@@ -294,7 +294,8 @@ local function uncommitted(state: model.State, snap: any, ids: { [string]: strin
 		table.insert(sections, with(ui.text({ ui.span("No uncommitted changes", "muted") }), { key = "clean" }))
 	end
 	local head = { ui.span("Changes", "strong"), ui.span("  " .. dirty, "muted num") }
-	return with(ui.card(head, sections), { key = "unc", collapsible = true, role = "branch-changes.uncommitted" })
+	-- A section, like Commits: no card ring, so the two groups read as one list.
+	return with(ui.section(head, sections), { key = "unc", collapsible = true, role = "branch-changes.uncommitted" })
 end
 
 -- One line per commit: subject as the label (it truncates with an ellipsis),
