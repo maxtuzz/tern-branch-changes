@@ -19,3 +19,20 @@
 [data-surface='plugin.branch-changes.view'] [data-role='branch-changes.split'] {
 	align-items: flex-start;
 }
+
+/* The ↺ on a file row is a link span, which Tern draws as `a[href]` — the only
+   clickable part a list row can hold. At text size it reads as punctuation, so
+   it is scaled up here and lights up under the pointer. */
+[data-surface^='plugin.branch-changes.'] .sf-item-value a[href] {
+	font-size: 1.4em;
+	line-height: 1;
+	text-decoration: none;
+	padding: 0 3px;
+	opacity: 0.5;
+}
+
+[data-surface^='plugin.branch-changes.'] .sf-item-value a[href]:hover,
+[data-surface^='plugin.branch-changes.'] .sf-item.sel .sf-item-value a[href],
+[data-surface^='plugin.branch-changes.'] .sf-item[data-tone='error'] .sf-item-value a[href] {
+	opacity: 1;
+}

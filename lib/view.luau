@@ -135,14 +135,15 @@ local function file_item(state: model.State, f: parse.FileEntry, row_id: string,
 	local title = STATUS_NAME[f.code] or f.code
 	-- Armed for discard: the row says so plainly, since the next press is final.
 	if state.armed == row_id then
-		local gone = if kind == "untracked" then "delete this file" else "discard these changes"
+		local gone = if kind == "untracked" then "delete" else "discard"
 		return {
 			label = { ui.span(base, "strong") },
-			detail = { ui.span("press x again to " .. gone, "error strong") },
+			-- Neutral wording: you may have armed this with the key or the ↺.
+			detail = { ui.span("again to " .. gone, "error strong") },
 			value = value(f, lay, row_id, true),
 			icon = "revert",
 			tone = "error",
-			title = "Press x again to " .. gone .. ", or escape to leave it alone",
+			title = "Press x or ⌘-click ↺ again to " .. gone .. " " .. f.path .. ", or escape to leave it alone",
 		}
 	end
 	local can_discard = kind ~= "commit"
