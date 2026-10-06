@@ -179,6 +179,29 @@ local function find(node: any, pred: (any) -> boolean): any
 	return nil
 end
 
+-- File rows are `el` divs wearing Tern's item classes; this finds them.
+local function rows_in(node: any): { any }
+	local out = {}
+	local function walk(n: any)
+		local class = (n.p or {}).class
+		if n.k == "el" and type(class) == "string" and string.find(class, "bc-row", 1, true) then
+			table.insert(out, n)
+		end
+		for _, child in n.c or {} do
+			walk(child)
+		end
+	end
+	walk(node)
+	return out
+end
+
+local function part_of(row: any, class: string): any
+	return find(row, function(n)
+		local c = (n.p or {}).class
+		return type(c) == "string" and string.find(c, class, 1, true) ~= nil
+	end)
+end
+
 local function key(def, state, cx, name: string, extra: { [string]: any }?)
 	local k = { name = name, ctrl = false, alt = false, shift = false, meta = false }
 	for f, v in extra or {} do
@@ -220,13 +243,11 @@ test("view marks the selected row and keeps item ids stable", function()
 	local unc = find(main, function(n)
 		return n.p and n.p.key == "unc"
 	end)
-	assert(unc, "uncommitted card")
-	local list = find(unc, function(n)
-		return n.k == "list"
-	end)
-	eq(list.p.selected, "main.unc.staged.l1.f1")
-	local _, ids = view.build(state)
-	eq(ids["main.unc.staged.l1.f1"], "staged:new.lua")
+	assert(unc, "the Changes group")
+	local row = rows_in(unc)[1]
+	assert(string.find(row.p.class, "sel", 1, true), "the selected row is marked")
+	eq(row.p.actions.click, "file=staged:new.lua")
+	eq(row.p.actions.dblclick, "diff=staged:new.lua")
 	local commits = find(main, function(n)
 		return n.p and n.p.key == "commits"
 	end)
@@ -281,18 +302,13 @@ test("view uses native chrome: chips, toned file rows, no TUI glyphs", function(
 	end
 	eq(labels.ahead, "↑3", "ahead/behind use compact git shorthand")
 	eq(labels.dirty, "3 changed")
-	local item = find(v.main, function(n)
-		return n.k == "item"
-	end)
-	eq(item.p.label[1].t, "new.lua", "file name is the label")
-	eq(item.p.tone, "warning", "modified rows are toned warning")
-	eq(item.p.title, "new.lua · modified · ⌘-click ↺ or press x to discard")
-	local unc = find(v.main, function(n)
+	local row = rows_in(v.main)[1]
+	eq(part_of(row, "sf-item-label").p.text, "new.lua", "file name is the label")
+	eq(row.p.tone, "warning", "modified rows are toned warning")
+	eq(row.p.title, "new.lua · modified")
+	local untracked = rows_in(find(v.main, function(n)
 		return n.p and n.p.key == "untracked"
-	end)
-	local untracked = find(unc, function(n)
-		return n.k == "item"
-	end)
+	end))[1]
 	eq(untracked.p.tone, "muted")
 	local commits = find(v.main, function(n)
 		return n.p and n.p.key == "commits"
@@ -590,11 +606,8 @@ test("double-click opens the diff block; single click stays inline", function()
 	def.event(state, { ev = "action", act = "file", value = "staged:new.lua" }, cx)
 	S.drain()
 	assert(state.diffs["staged:new.lua"].text, "inline diff on single click")
-	local v = def.view(state, cx)
-	local item = find(v.main, function(n)
-		return n.k == "item"
-	end)
-	eq(item.p.actions.dblclick, "diff=staged:new.lua")
+	local row = rows_in(def.view(state, cx).main)[1]
+	eq(row.p.actions.dblclick, "diff=staged:new.lua")
 end)
 
 test("o on a commit file links to that commit's diff", function()
@@ -911,14 +924,10 @@ test("x arms a row and says what it will do; a second x discards", function()
 	eq(state.armed, "unstaged:lib/util.lua", "the first press only arms it")
 	local ran = #S.ran
 	eq(#S.ran, ran, "nothing has run yet")
-	local item = find(row_of(def.view(state, cx).main, "unstaged"), function(n)
-		return n.k == "item"
-	end)
-	eq(item.p.tone, "error")
-	eq(item.p.icon, "revert")
-	local said = table.concat(texts(item), "|")
-	assert(string.find(said, "again to discard", 1, true), "the row says what happens next")
-	assert(not string.find(said, "press x", 1, true), "without naming one way of doing it")
+	local row = rows_in(row_of(def.view(state, cx).main, "unstaged"))[1]
+	eq(row.p.tone, "error")
+	assert(string.find(part_of(row, "bc-revert").p.class, "on", 1, true), "the control stays shown while armed")
+	eq(part_of(row, "sf-item-detail").p.text, "again to discard", "the row says what happens next")
 	key(def, state, cx, "x")
 	eq(state.armed, nil)
 	eq(S.ran[ran + 1], PREFIX .. "restore -- lib/util.lua", "it discards the worktree copy")
@@ -1003,23 +1012,27 @@ test("the full view's discard chip takes two clicks too", function()
 	eq(S.ran[ran + 1], PREFIX .. "restore --staged --worktree -- new.lua")
 end)
 
-test("every change row carries a revert link, and no commit file does", function()
+test("every change row carries a real revert icon, and no commit file does", function()
 	local def, cx, state = start()
-	local row = find(row_of(def.view(state, cx).main, "unstaged"), function(n)
-		return n.k == "item"
+	local row = rows_in(row_of(def.view(state, cx).main, "unstaged"))[1]
+	local control = part_of(row, "bc-revert")
+	assert(control, "the control is its own element, not a character in the text")
+	eq(control.p.actions.click, "discard=unstaged:lib/util.lua", "with its own plain click")
+	eq(control.p.href, link.discard_url("unstaged:lib/util.lua", 7), "and a link as a fallback")
+	local icon = find(control, function(n)
+		return n.k == "icon"
 	end)
-	local glyph = row.p.value[1]
-	eq(glyph.t, "↺")
-	eq(glyph.href, link.discard_url("unstaged:lib/util.lua", 7), "the link names its row and its pane")
-	eq(row.p.icon, "file", "the status icon keeps the left slot")
+	eq(icon.p.name, "revert", "a native icon node")
+	eq(find(part_of(row, "sf-item-ic"), function(n)
+		return n.k == "icon"
+	end).p.name, "file", "the status icon keeps the left slot")
 	-- A file inside a commit is history, so it gets no revert control.
 	local move = state.snap.commits[3]
 	def.event(state, { ev = "action", act = "commit", value = move.sha }, cx)
 	S.drain()
-	local in_commit = find(row_of(def.view(state, cx).main, "commits"), function(n)
-		return n.k == "item" and n.p.value and n.p.value[1] and n.p.value[1].t == "↺"
-	end)
-	eq(in_commit, nil)
+	local in_commit = rows_in(row_of(def.view(state, cx).main, "commits"))[1]
+	assert(in_commit, "the commit's files are rows too")
+	eq(part_of(in_commit, "bc-revert"), nil)
 end)
 
 test("clicking the revert link hands the action back to the block", function()
@@ -1059,15 +1072,10 @@ end)
 test("change counts are toned, not struck through", function()
 	local def, cx, state = start()
 	local v = def.view(state, cx)
-	local item = find(v.main, function(n)
-		return n.k == "item"
-	end)
-	eq(item.p.value[1].t, "↺", "the revert control sits before the counts")
-	local plus, minus = item.p.value[3], item.p.value[4]
-	eq(plus.t, "+1")
-	eq(plus.s, "success num", "additions are toned, not `ins` (which underlines)")
-	eq(minus.t, " -1")
-	eq(minus.s, "error num", "deletions are toned, not `del` (which strikes through)")
+	local row = rows_in(v.main)[1]
+	eq(part_of(row, "bc-ins").p.text, "+1")
+	eq(part_of(row, "bc-del").p.text, "-1")
+	eq(part_of(row, "bc-code").p.text, "M", "the status letter is the row's own element")
 	for _, node in { v.main, v.dock } do
 		for _, sp in spans_of(node) do
 			local style = sp.s or ""
@@ -1147,11 +1155,9 @@ test("a wide pane puts the file list beside the selected diff", function()
 	local list = row_of(split, "list")
 	local hero = row_of(split, "hero")
 	assert(list and hero, "list and hero columns")
-	eq(wide_ids["main.split.list.unc.staged.l1.f1"], "staged:new.lua", "ids follow the deeper layout")
-	local wlist = find(list, function(n)
-		return n.k == "list"
-	end)
-	eq(wlist.p.selected, "main.split.list.unc.staged.l1.f1", "so the selection still highlights")
+	local sha = state.snap.commits[1].sha
+	eq(wide_ids["main.split.list.commits.l1.c" .. sha], "c:" .. sha, "commit ids follow the deeper layout")
+	assert(string.find(rows_in(list)[1].p.class, "sel", 1, true), "and the selected file row is still marked")
 	eq(hero.p.role, "branch-changes.hero")
 	local d = find(hero, function(n)
 		return n.k == "diff"
@@ -1185,12 +1191,8 @@ test("files an agent just touched surface first with a live cue", function()
 	model.note_changes(state, false)
 	local age = model.fresh_age(state, "unstaged:lib/util.lua")
 	assert(age ~= nil and age < 5, "the edited file is fresh")
-	local unstaged = row_of(def.view(state, cx).main, "unstaged")
-	local item = find(unstaged, function(n)
-		return n.k == "item"
-	end)
-	local detail = table.concat(texts(item), "|")
-	assert(string.find(detail, "just now", 1, true), "the row says when it changed")
+	local row = rows_in(row_of(def.view(state, cx).main, "unstaged"))[1]
+	assert(string.find(part_of(row, "sf-item-detail").p.text, "just now", 1, true), "the row says when it changed")
 	state.fresh["unstaged:lib/util.lua"] = os.time() - model.FRESH_SECONDS - 60
 	eq(model.fresh_age(state, "unstaged:lib/util.lua"), nil, "and the cue fades")
 end)
