@@ -81,9 +81,12 @@ A host block can't create blocks itself, so the list follows a `tern-branch-chan
 
 The block refreshes on its own:
 
-- 500 ms after any shell command finishes in a pane under the worktree (`command_finished`, debounced)
-- when `git rev-parse HEAD` changes, checked every 12 s (catches commits made outside Tern shells)
-- on `r`
+- **A working-tree poll.** Every `poll_ms` (2 s by default) it runs one `git status` and refreshes only when the output differs from the last. This is what catches edits an editor or an agent writes directly, which finish no shell command and leave HEAD alone. The status output is handed to the refresh, so a cycle runs `git status` once, not twice.
+- **Backoff.** After six quiet rounds the poll drops to 15 s, so a block left open all day is nearly free. A command starting under the worktree (`command_started`) wakes it back to the quick pace at once — an agent about to write files is exactly when you want it watching.
+- **Shell commands.** 500 ms after a command finishes under the worktree (`command_finished`, debounced).
+- **`r`.**
+
+Tern has no filesystem-change event (`tern.on` takes `spawn`, `command_started`, `command_finished`, `cwd`, `title` and `pane_exited`), and `tern.process.run` only reports a process when it exits, so a plugin can't stream a watcher like `fswatch`. Polling `git status` is the available answer. **In a large monorepo, turn on git's fsmonitor** — `git config core.fsmonitor true` (or watchman) — which makes each poll a question to a daemon instead of a walk of the worktree, so a 2 s poll stays cheap. Otherwise raise `poll_ms`.
 
 ## Config
 
@@ -94,6 +97,7 @@ Optional `.tern/branch-changes.json` in the worktree root. It's re-read on every
   "base": ["origin/dev", "origin/main"],
   "max_commits": 200,
   "max_files": 2000,
+  "poll_ms": 2000,
   "show_branch_total": true,
   "untracked": "normal"
 }
@@ -104,6 +108,7 @@ Optional `.tern/branch-changes.json` in the worktree root. It's re-read on every
 | `base` | `["origin/dev", "origin/main"]` | Candidate base refs. The first one that exists is used; `origin/HEAD` is always tried last |
 | `max_commits` | `200` | Cap on listed branch commits (1–1000); the rest show as "… N older" |
 | `max_files` | `2000` | Cap per file group and per commit (1–10000) |
+| `poll_ms` | `2000` | How often the worktree is checked for edits, in ms (250–60000). Backs off to 15 s while nothing changes |
 | `show_branch_total` | `true` | Show `git diff --shortstat <merge-base> HEAD` in the header |
 | `untracked` | `"normal"` | `git status --untracked-files=` mode: `normal`, `all` or `no` |
 

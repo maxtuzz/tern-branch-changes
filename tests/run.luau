@@ -400,12 +400,81 @@ test("command_finished elsewhere does not refresh", function()
 	eq(#S.ran, before)
 end)
 
-test("HEAD poll is a single rev-parse while HEAD is unchanged", function()
-	start()
+local STATUS_KEY = PREFIX .. "status --porcelain=v2 --branch -z --untracked-files=normal"
+
+test("the poll watches the worktree, one status call per quiet tick", function()
+	local _, _, state = start()
 	local before = #S.ran
-	S.advance(12000)
-	eq(#S.ran, before + 1)
-	assert(string.find(S.ran[#S.ran], "rev-parse -q --verify HEAD", 1, true))
+	S.advance(2000)
+	eq(#S.ran, before + 1, "one call per tick")
+	eq(S.ran[#S.ran], STATUS_KEY, "and it watches the tree, not just HEAD")
+	local calls = #S.ran
+	S.advance(2000)
+	eq(#S.ran, calls + 1, "still just the probe while nothing has changed")
+	local _ = state
+end)
+
+test("an edit made outside Tern lands on the next poll", function()
+	local _, _, state = start()
+	local original = F.runs[STATUS_KEY]
+	-- What an editor or an agent leaves behind: a changed tree, no shell command,
+	-- and HEAD untouched. The old HEAD poll never noticed this.
+	F.runs[STATUS_KEY] = {
+		status = 0,
+		stdout = original.stdout .. "1 .M N... 100644 100644 100644 aaa bbb fresh.lua\0",
+		stderr = "",
+	}
+	S.advance(2000)
+	local found = false
+	for _, f in state.snap.status.unstaged.files do
+		found = found or f.path == "fresh.lua"
+	end
+	assert(found, "the edit shows up in Unstaged")
+	assert(model.fresh_age(state, "unstaged:fresh.lua"), "and is flagged as just changed")
+	F.runs[STATUS_KEY] = original
+end)
+
+test("a refresh from the poll does not run git status twice", function()
+	local _, _, state = start()
+	local original = F.runs[STATUS_KEY]
+	F.runs[STATUS_KEY] = {
+		status = 0,
+		stdout = original.stdout .. "1 .M N... 100644 100644 100644 aaa bbb fresh.lua\0",
+		stderr = "",
+	}
+	local before = 0
+	for _, ran in S.ran do
+		before += if ran == STATUS_KEY then 1 else 0
+	end
+	S.advance(2000)
+	local after = 0
+	for _, ran in S.ran do
+		after += if ran == STATUS_KEY then 1 else 0
+	end
+	eq(after - before, 1, "the poll's status output is handed to the refresh")
+	F.runs[STATUS_KEY] = original
+	local _ = state
+end)
+
+test("the poll backs off while the worktree is quiet, and a command wakes it", function()
+	local _, _, state = start()
+	for _ = 1, 6 do
+		S.advance(2000)
+	end
+	local calls = #S.ran
+	S.advance(2000)
+	eq(#S.ran, calls, "the quick pace has stopped")
+	S.advance(15000)
+	assert(#S.ran > calls, "but it still polls, slowly")
+	-- A command starting under the root means work is coming: back to quick.
+	table.insert(S.panes, { pane = 5, cwd = F.root, program = "zsh", title = "", busy = false })
+	for _, h in S.handlers.command_started do
+		h({ pane = 5, line = "claude", cwd = F.root }, nil)
+	end
+	calls = #S.ran
+	S.advance(2000)
+	assert(#S.ran > calls, "polling quickly again")
+	local _ = state
 end)
 
 test("background work stops once the pane is gone", function()

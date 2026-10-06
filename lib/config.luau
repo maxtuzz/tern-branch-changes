@@ -8,6 +8,7 @@ export type Config = {
 	base: { string },
 	max_commits: number,
 	max_files: number,
+	poll_ms: number, -- how often the worktree is checked for edits
 	show_branch_total: boolean,
 	untracked: string, -- "normal" | "all" | "no"
 }
@@ -20,6 +21,7 @@ function M.defaults(): Config
 		base = { "origin/dev", "origin/main" },
 		max_commits = 200,
 		max_files = 2000,
+		poll_ms = 2000,
 		show_branch_total = true,
 		untracked = "normal",
 	}
@@ -78,6 +80,14 @@ function M.normalize(raw: any): (Config, { string })
 			cfg.max_files = n
 		else
 			warn("max_files", "an integer 1-10000")
+		end
+	end
+	if raw.poll_ms ~= nil then
+		local n = int_in(raw.poll_ms, 250, 60000)
+		if n then
+			cfg.poll_ms = n
+		else
+			warn("poll_ms", "an integer 250-60000 (milliseconds)")
 		end
 	end
 	if raw.show_branch_total ~= nil then

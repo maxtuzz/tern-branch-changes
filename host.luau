@@ -14,7 +14,11 @@ local link = require("./lib/link")
 local diff_block = require("./lib/diff_block")
 
 local DEBOUNCE_MS = 500
-local POLL_MS = 12000
+-- The poll runs `git status` and refreshes when its output changed. It starts
+-- at the configured pace (2 s) so an agent's edits land quickly, and after a
+-- few quiet rounds backs off to IDLE_MS, so a block left open all day is cheap.
+local IDLE_MS = 15000
+local QUIET_ROUNDS = 6
 local KV_PANES = "panes" -- pane id -> worktree root, read by window.luau to focus an open block
 
 type Block = {
@@ -24,7 +28,9 @@ type Block = {
 	busy: boolean,
 	again: boolean, -- a refresh was asked for while one ran
 	debounce: TimerHandle?,
-	head: string?, -- HEAD the poll compares against
+	seen: string?, -- the last status output, so the poll can tell what changed
+	quiet: number, -- consecutive polls that found nothing, for the backoff
+	tick: TimerHandle?, -- the pending poll, so waking it can re-arm at the quick pace
 	ids: { [string]: string }, -- list item node id -> row id, from the last view
 }
 
@@ -71,7 +77,7 @@ local function remember_root(pane: number, root: string)
 	end)
 end
 
-local refresh: (b: Block) -> ()
+local refresh: (b: Block, have_status: string?) -> ()
 
 local function load_diff(b: Block, row: model.Row)
 	local root, target = b.state.root, row.target
@@ -115,7 +121,7 @@ local function reload_open_diffs(b: Block)
 	end
 end
 
-refresh = function(b: Block)
+refresh = function(b: Block, have_status: string?)
 	if b.busy then
 		b.again = true
 		return
@@ -142,10 +148,12 @@ refresh = function(b: Block)
 			s.error = err
 			if snap then
 				local first = s.refreshed_at == nil
+				-- What the poll compares against, so it doesn't refresh again
+				-- for a change this snapshot already carries.
+				b.seen = snap.raw
 				s.snap = snap
 				s.refreshed_at = os.time()
 				model.note_changes(s, first)
-				b.head = snap.status.oid
 				model.prune(s)
 				if s.sel == nil then
 					model.move(s, 0)
@@ -157,7 +165,7 @@ refresh = function(b: Block)
 		if b.again then
 			refresh(b)
 		end
-	end)
+	end, have_status)
 end
 
 local function schedule(b: Block, ms: number)
@@ -172,21 +180,47 @@ local function schedule(b: Block, ms: number)
 	end)
 end
 
--- Cheap HEAD poll: catches commits, checkouts and rebases made outside a Tern shell.
-local function poll(b: Block)
-	tern.timer(POLL_MS, function()
+-- Watches the worktree: one `git status` per tick, and a full refresh only when
+-- its output differs from the last. `command_finished` and `r` still refresh
+-- directly; this is what catches edits made by an editor or an agent, which
+-- finish no shell command and leave HEAD alone.
+local poll: (b: Block) -> ()
+
+-- Back to the quick pace now, not at the end of a 15 s nap: a command just
+-- started under the root, or the user asked for a refresh.
+local function wake(b: Block)
+	b.quiet = 0
+	if b.tick then
+		b.tick:cancel()
+		b.tick = nil
+	end
+	poll(b)
+end
+
+poll = function(b: Block)
+	local wait = if b.quiet >= QUIET_ROUNDS then IDLE_MS else b.state.cfg.poll_ms
+	b.tick = tern.timer(wait, function()
+		b.tick = nil
 		if not reap(b.cx.pane) or blocks[b.cx.pane] ~= b then
 			return
 		end
 		local root = b.state.root
-		if root and not b.busy then
-			git.head(root, function(head)
-				if alive(b.cx.pane) and head ~= b.head then
-					refresh(b)
-				end
-			end)
+		if root == nil or b.busy then
+			poll(b)
+			return
 		end
-		poll(b)
+		git.status(root, b.state.cfg, function(out)
+			if not alive(b.cx.pane) or blocks[b.cx.pane] ~= b then
+				return
+			end
+			if out ~= nil and out ~= b.seen then
+				b.seen, b.quiet = out, 0
+				refresh(b, out)
+			else
+				b.quiet += 1
+			end
+			poll(b)
+		end)
 	end)
 end
 
@@ -292,7 +326,9 @@ local def: BlockDef<model.State> = {
 			busy = false,
 			again = false,
 			debounce = nil,
-			head = nil,
+			seen = nil,
+			quiet = 0,
+			tick = nil,
 			ids = {},
 		}
 		blocks[cx.pane] = b
@@ -375,6 +411,7 @@ local def: BlockDef<model.State> = {
 		elseif name == "y" and row then
 			cx:copy(if row.target then row.target.path else row.sha or "")
 		elseif name == "r" then
+			wake(b)
 			refresh(b)
 		elseif name == "b" then
 			cycle_base(b, if key.shift then -1 else 1)
@@ -442,23 +479,47 @@ local def: BlockDef<model.State> = {
 tern.block.define("view", def)
 diff_block.define()
 
--- Shell commands under a block's root (git commit, checkout, stash, …) refresh it.
-tern.on("command_finished", function(ev, _cx)
-	local cwd: string? = nil
+-- The pane's directory, when it is known.
+local function pane_cwd(pane: number): string?
 	for _, p in tern.pane.list() do
-		if p.pane == ev.pane then
-			cwd = p.cwd
-			break
+		if p.pane == pane then
+			return p.cwd
 		end
 	end
+	return nil
+end
+
+-- Runs `fn` for every block watching the worktree `pane` sits in.
+local function for_blocks_under(pane: number, fn: (Block) -> ())
+	local cwd = pane_cwd(pane)
+	if next(blocks) ~= nil then
+		reap(nil)
+	end
+	for _, b in blocks do
+		if util.under(cwd, b.state.root) or util.under(cwd, b.state.dir) then
+			fn(b)
+		end
+	end
+end
+
+-- Shell commands under a block's root (git commit, checkout, stash, …) refresh it.
+tern.on("command_finished", function(ev, _cx)
+	local cwd = pane_cwd(ev.pane)
 	diff_block.on_command(cwd)
 	if next(blocks) == nil then
 		return
 	end
-	reap(nil)
-	for _, b in blocks do
-		if util.under(cwd, b.state.root) or util.under(cwd, b.state.dir) then
-			schedule(b, DEBOUNCE_MS)
-		end
+	for_blocks_under(ev.pane, function(b)
+		schedule(b, DEBOUNCE_MS)
+		wake(b)
+	end)
+end)
+
+-- A command starting under the root usually means work is about to land (an
+-- agent, a build, a test run), so the poll goes back to its quick pace.
+tern.on("command_started", function(ev, _cx)
+	if next(blocks) == nil then
+		return
 	end
+	for_blocks_under(ev.pane, wake)
 end)
