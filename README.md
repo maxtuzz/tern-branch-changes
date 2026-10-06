@@ -77,7 +77,7 @@ In the full view a click loads the diff into the hero instead of folding it away
 
 `branch-changes.diff` shows one file's patch full-pane with Tern's own `ui.diff` renderer. Its args are `{ root, kind, path, sha?, orig? }`, where kind is staged, unstaged, untracked or commit. Press `r` to reload; `e` edits the file when it still exists. Working-tree diffs reload on their own when a shell command finishes under the root.
 
-A host block can't create blocks itself, so the list follows a `tern-branch-changes://diff?root=…&kind=…&path=…&sha=…` link with `cx:open`. `window.luau`'s `tern.route.link` turns that link into the block, or focuses the open block for the same root, kind, SHA and path.
+A host block can't create blocks itself, so the list follows a `tern-branch-changes://diff?root=…&kind=…&path=…&sha=…` link with `cx:open`. `window.luau`'s `tern.route.link` focuses the open block for the same root, kind, SHA and path, or places a new one. It places it itself rather than letting the route do it: a route's `block` decision opens beside the pane the link came from, which halves the sidebar and leaves the diff too narrow to read. Instead it walks the tab's split tree, splits the roomiest pane that isn't one of this plugin's blocks, and falls back to a new tab.
 
 The block refreshes on its own:
 
@@ -146,6 +146,9 @@ The tests run the real `host.luau` against a stub `tern` (`tests/stub.luau`) and
 
 - **Width.** A block learns its size only in cells, from `cx.cols`, so the layout switches at cell thresholds (sidebar under 56, two columns at 100) rather than at pixel widths.
 - **No wrap control.** A `text` node has no "don't wrap" prop. A `row` itself doesn't wrap, but its children shrink, and a squeezed text node breaks its own words, so chips and keycaps carry `shrink = 0` and the view spends width by dropping whole items. Long single-line text (the branch name, the worktree path) is clipped with `max = { h = "1lines" }`, which cuts rather than ellipsizes — and it can only go on text, since clipping a row to one line would slice the top and bottom off any badge inside it.
+- **A row centres its children** (`align-items: center` in Tern's sheet), which in the full view pushed the diff column half a screen down beside a tall list. The plugin sheet sets `flex-start` on the split.
+- **A region root is the region itself**: its `role` goes on the region element and its own content isn't drawn, so the split row has to be a child of a `col` root rather than the root.
+- **No pane widths.** `PaneInfo` carries no size, so "which pane is roomiest" is worked out from the tab's split-tree ratios.
 - **No hover state.** Plugins see clicks, not hovers, so anything "on hover" is a `title` tooltip instead; that is where the long forms of the chips and rows live.
 - **No menus for a plugin's own nodes.** `actions` carries `click` and `dblclick`, so the base picker is one chip that cycles rather than a dropdown.
 - **Card heads take spans only**, which is one reason commits are list rows now: a row gives real truncation and a right-aligned value, which a card head does not.

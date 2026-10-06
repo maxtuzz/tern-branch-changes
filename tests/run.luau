@@ -559,23 +559,42 @@ test("window route opens a diff block, or focuses the one already open", functio
 	local url = link.encode(target)
 	local focused: number? = nil
 	local panes = {}
+	local opened: any = nil
 	local wcx = {
 		session = {
 			panes = function(_self)
 				return panes
+			end,
+			tab_of = function(_self, _pane)
+				return nil -- no tab layout: the block takes its own tab
+			end,
+			layout = function(_self, _tab)
+				return nil
+			end,
+			pane = function(_self, _id)
+				return nil
 			end,
 		},
 		layout = {
 			focus = function(_self, pane)
 				focused = pane
 			end,
+			split = function(_self, _pane, _dir, launch)
+				opened = { launch = launch }
+				return 7
+			end,
+			new_tab = function(_self, launch)
+				opened = { launch = launch }
+				return 8
+			end,
 		},
 	}
 	eq(route({ url = "https://example.com", pane = 1, mods = {} }, wcx), nil, "other links pass")
 	S.kv.diff_panes = {}
 	local decision = route({ url = url, pane = 1, mods = {} }, wcx)
-	eq(decision.block, "branch-changes.diff")
-	eq(decision.args[4], "abc")
+	eq(decision.handled, true, "the plugin places the block itself")
+	eq(opened.launch.block, "branch-changes.diff")
+	eq(opened.launch.args[4], "abc")
 	panes = { { pane = 5, block = "branch-changes.diff", cwd = "", title = "" } }
 	S.kv.diff_panes = { ["5"] = link.key(target) }
 	decision = route({ url = url, pane = 1, mods = {} }, wcx)
@@ -713,11 +732,20 @@ end)
 test("a wide pane puts the file list beside the selected diff", function()
 	local def, cx, state = start()
 	key(def, state, cx, "enter") -- load the selected file's diff
-	local wide = view.build(state, 140)
-	eq(wide.main.k, "row", "two columns")
-	local list = row_of(wide.main, "list")
-	local hero = row_of(wide.main, "hero")
+	local built, wide_ids = view.build(state, 140)
+	local wide = built
+	eq(wide.main.k, "col", "the region root stays a col; the split is a child")
+	local split = row_of(wide.main, "split")
+	eq(split.k, "row", "two columns")
+	eq(split.p.role, "branch-changes.split", "the split keeps its own role for the sheet")
+	local list = row_of(split, "list")
+	local hero = row_of(split, "hero")
 	assert(list and hero, "list and hero columns")
+	eq(wide_ids["main.split.list.unc.staged.l1.f1"], "staged:new.lua", "ids follow the deeper layout")
+	local wlist = find(list, function(n)
+		return n.k == "list"
+	end)
+	eq(wlist.p.selected, "main.split.list.unc.staged.l1.f1", "so the selection still highlights")
 	eq(hero.p.role, "branch-changes.hero")
 	local d = find(hero, function(n)
 		return n.k == "diff"
@@ -735,8 +763,7 @@ end)
 
 test("the hero names the file and offers its own pane", function()
 	local def, cx, state = start()
-	local wide = view.build(state, 140)
-	local hero = row_of(wide.main, "hero")
+	local hero = row_of(view.build(state, 140).main, "hero")
 	eq(find(hero, function(n)
 		return n.p and n.p.key == "pop"
 	end).p.actions.click, "diff=staged:new.lua")
@@ -805,6 +832,59 @@ test("in a wide pane a click keeps the hero diff instead of folding it", functio
 	cx.cols = 40
 	def.event(state, { ev = "action", act = "file", value = "staged:new.lua" }, cx)
 	eq(state.diffs["staged:new.lua"], nil, "but a sidebar still toggles it closed")
+end)
+
+test("a diff block lands beside the roomiest pane, not inside the sidebar", function()
+	S.routes = {}
+	__reload("window")
+	local route = S.routes[1]
+	local target = { root = "/r", kind = "staged", path = "x.lua" }
+	local split: any = nil
+	local tabbed: any = nil
+	-- A narrow sidebar (0.2) beside a wide editor (0.8); the link comes from the sidebar.
+	local panes = {
+		[2] = { pane = 2, block = "branch-changes.view" },
+		[3] = { pane = 3, block = nil },
+	}
+	local wcx = {
+		session = {
+			panes = function(_self)
+				return { panes[2], panes[3] }
+			end,
+			tab_of = function(_self, _pane)
+				return 1
+			end,
+			layout = function(_self, _tab)
+				return { tab = 1, root = { split = "right", ratio = 0.2, { pane = 2 }, { pane = 3 } } }
+			end,
+			pane = function(_self, id)
+				return panes[id]
+			end,
+		},
+		layout = {
+			split = function(_self, pane, dir, launch)
+				split = { pane = pane, dir = dir, launch = launch }
+				return 11
+			end,
+			new_tab = function(_self, launch)
+				tabbed = launch
+				return 12
+			end,
+			focus = function(_self, _pane) end,
+		},
+	}
+	S.kv.diff_panes = {}
+	local decision = route({ url = link.encode(target), pane = 2, mods = {} }, wcx)
+	eq(decision.handled, true, "the plugin places the block itself")
+	eq(split.pane, 3, "it splits the wide editor, not the narrow sidebar")
+	eq(split.dir, "right")
+	eq(split.launch.block, "branch-changes.diff")
+	eq(tabbed, nil)
+	-- With nothing but this plugin's own panes, a new tab beats halving one.
+	split, panes[3] = nil, { pane = 3, block = "branch-changes.diff" }
+	route({ url = link.encode(target), pane = 2, mods = {} }, wcx)
+	eq(split, nil)
+	eq(tabbed.block, "branch-changes.diff", "falls back to its own tab")
 end)
 
 test("the window route opens the full view in its own tab", function()

@@ -13,3 +13,9 @@
 [data-surface^='plugin.branch-changes.'] [data-role='branch-changes.uncommitted'] > .sf-section-body {
 	padding-left: 8px;
 }
+
+/* A row centres its children, so in the full view a tall file list pushed the
+   diff column half a screen down. The split keeps both columns at the top. */
+[data-surface='plugin.branch-changes.view'] [data-role='branch-changes.split'] {
+	align-items: flex-start;
+}

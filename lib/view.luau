@@ -274,8 +274,8 @@ local function header(state: model.State, lay: Layout): { Node }
 	return nodes
 end
 
-local function uncommitted(state: model.State, snap: any, ids: { [string]: string }, lay: Layout): Node
-	local id = "main.unc"
+local function uncommitted(state: model.State, snap: any, ids: { [string]: string }, lay: Layout, prefix: string): Node
+	local id = prefix .. ".unc"
 	local sections: { Node } = {}
 	local dirty = 0
 	for _, g in model.GROUPS do
@@ -327,8 +327,8 @@ end
 
 -- The commit list: plain rows, no card borders. An expanded commit's files
 -- follow its row, using the same file rows as the Changes section.
-local function commits(state: model.State, snap: any, ids: { [string]: string }, lay: Layout): Node
-	local parent = "main.commits"
+local function commits(state: model.State, snap: any, ids: { [string]: string }, lay: Layout, prefix: string): Node
+	local parent = prefix .. ".commits"
 	local out: { Node } = {}
 	local items: { { [string]: any } } = {}
 	local shas: { string } = {}
@@ -436,7 +436,7 @@ local function hero(state: model.State): Node
 			table.insert(children, with(ui.text({ ui.span("Press enter or click the row to load this diff", "muted") }), { key = "hint" }))
 		end
 	end
-	return with(ui.col(children), { key = "hero", role = "branch-changes.hero", grow = 1, basis = 0.6 })
+	return with(ui.col(children), { key = "hero", role = "branch-changes.hero", grow = 1, basis = 0.58 })
 end
 
 local ALL_HINTS = {
@@ -478,6 +478,10 @@ end
 function M.build(state: model.State, cols: number?): (BlockView, { [string]: string })
 	local lay = M.layout(cols or 80)
 	local ids: { [string]: string } = {}
+	-- Node ids are spelled out, so they have to follow the layout: in the wide
+	-- view the lists sit one level deeper, under the split's left column.
+	local wide = lay.wide and state.snap ~= nil
+	local prefix = if wide then "main.split.list" else "main"
 	local main: { Node } = header(state, lay)
 	for i, w in state.warnings do
 		table.insert(main, with(ui.text({ ui.span(w, "warning") }), { key = "w" .. i }))
@@ -487,17 +491,21 @@ function M.build(state: model.State, cols: number?): (BlockView, { [string]: str
 		table.insert(main, with(ui.text({ ui.span(state.error, "error") }), { key = "error" }))
 	end
 	if snap then
-		table.insert(main, uncommitted(state, snap, ids, lay))
-		table.insert(main, commits(state, snap, ids, lay))
+		table.insert(main, uncommitted(state, snap, ids, lay, prefix))
+		table.insert(main, commits(state, snap, ids, lay, prefix))
 	elseif not state.error then
 		table.insert(main, with(ui.text({ ui.span("Loading…", "muted") }), { key = "loading" }))
 	end
 
+	-- The region root is the region itself: Tern draws its children and takes its
+	-- `role`, so the split has to be a child, not the root.
 	local root: Node
-	if lay.wide and snap then
-		root = ui.row({
-			with(ui.col(main), { key = "list", grow = 1, shrink = 1, basis = 0.4, role = "branch-changes.list" }),
-			hero(state),
+	if wide then
+		root = ui.col({
+			with(ui.row({
+				with(ui.col(main), { key = "list", grow = 1, shrink = 1, basis = 0.36, role = "branch-changes.list" }),
+				hero(state),
+			}), { key = "split", role = "branch-changes.split" }),
 		})
 	else
 		root = ui.col(main)

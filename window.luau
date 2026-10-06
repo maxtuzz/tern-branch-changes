@@ -119,8 +119,61 @@ tern.command({
 	end,
 })
 
+-- Width share of every tiled pane in `tree`, as a fraction of the tab.
+local function shares(tree: any, width: number, out: { [number]: number })
+	if tree == nil then
+		return
+	end
+	if tree.pane then
+		out[tree.pane] = width
+		return
+	end
+	local ratio = if type(tree.ratio) == "number" then tree.ratio else 0.5
+	local first = if tree.split == "right" then width * ratio else width
+	local second = if tree.split == "right" then width * (1 - ratio) else width
+	shares(tree[1], first, out)
+	shares(tree[2], second, out)
+end
+
+-- The roomiest pane that isn't one of this plugin's own blocks. Splitting the
+-- block the link came from would halve a sidebar, which leaves the diff too
+-- narrow to read; the main editor or shell is the better neighbour.
+local function widest_other(cx: WindowCx, from: number?): number?
+	local tab = if from then cx.session:tab_of(from) else nil
+	local layout = if tab then cx.session:layout(tab) else nil
+	if layout == nil then
+		return nil
+	end
+	local width: { [number]: number } = {}
+	shares(layout.root, 1, width)
+	local best: number? = nil
+	local best_width = 0
+	for pane, w in width do
+		local info = cx.session:pane(pane)
+		local mine = info ~= nil and (info.block == KIND or info.block == DIFF_KIND)
+		if not mine and w > best_width then
+			best, best_width = pane, w
+		end
+	end
+	return best
+end
+
+-- Opens a diff block where there is room for it: beside the roomiest other
+-- pane, else in its own tab rather than slicing the sidebar in half.
+local function open_diff(cx: WindowCx, from: number?, target: link.DiffLink)
+	local launch = { block = DIFF_KIND, args = link.to_args(target), cwd = target.root }
+	local neighbour = widest_other(cx, from)
+	local pane = if neighbour then cx.layout:split(neighbour, "right", launch) else nil
+	if pane == nil then
+		pane = cx.layout:new_tab(launch)
+	end
+	if pane == nil then
+		cx:toast("error", "Branch Changes isn't loaded on this host", "Run `tern plugin reload` and check `tern plugin list`.")
+	end
+end
+
 -- `tern-branch-changes://diff?…`, followed by the list block's `cx:open`:
--- focus the diff block already showing that file, else open one beside.
+-- focus the diff block already showing that file, else open one where it fits.
 tern.route.link(function(req, cx)
 	-- `f` in the block: the same worktree, full width in a new tab.
 	local root = link.decode_view(req.url)
@@ -141,5 +194,6 @@ tern.route.link(function(req, cx)
 			return { handled = true }
 		end
 	end
-	return { block = DIFF_KIND, args = link.to_args(target) }
+	open_diff(cx, req.pane, target)
+	return { handled = true }
 end)
