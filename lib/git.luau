@@ -72,6 +72,31 @@ function M.toplevel(dir: string, cb: (string?, string?) -> ())
 	end)
 end
 
+-- The one call that sees the working tree. It is the dear part of a refresh in
+-- a big worktree, so the poll runs it alone and hands the output to the
+-- snapshot when something changed, instead of running it twice.
+function M.status_args(cfg: config.Config): { string }
+	return { "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=" .. cfg.untracked }
+end
+
+-- Reports how long the call took as well: the poll paces itself by it, so a
+-- worktree where status is expensive is asked less often.
+function M.status(root: string, cfg: config.Config, cb: (string?, number) -> ())
+	local started = tern.now()
+	M.run(root, M.status_args(cfg), M.SLOW_MS, function(r)
+		cb(if r.status == 0 then r.stdout else nil, tern.now() - started)
+	end)
+end
+
+-- Whether this worktree has git's filesystem monitor on, which is what keeps
+-- `git status` cheap in a big repo.
+function M.fsmonitor(root: string, cb: (boolean) -> ())
+	M.run(root, { "config", "--get", "core.fsmonitor" }, M.FAST_MS, function(r)
+		local value = string.match(r.stdout, "^%s*(.-)%s*$") or ""
+		cb(r.status == 0 and value ~= "" and value ~= "false")
+	end)
+end
+
 function M.head(root: string, cb: (string?) -> ())
 	M.run(root, { "rev-parse", "-q", "--verify", "HEAD" }, M.FAST_MS, function(r)
 		cb(if r.status == 0 then (string.gsub(r.stdout, "%s+$", "")) else nil)
@@ -80,6 +105,7 @@ end
 
 export type Snapshot = {
 	status: parse.Status,
+	raw: string, -- the status output this snapshot was read from, for the poll
 	bases: { string }, -- configured refs that exist, in order
 	base: string?, -- the ref in use
 	merge_base: string?,
@@ -147,37 +173,39 @@ end
 
 -- Everything the block shows above the per-commit file lists.
 -- `want_base` is the user's chosen base, used when it still exists.
-function M.snapshot(root: string, cfg: config.Config, want_base: string?, done: (Snapshot?, string?) -> ())
+-- `have_status` is a status output the caller already fetched this cycle.
+function M.snapshot(root: string, cfg: config.Config, want_base: string?, done: (Snapshot?, string?) -> (), have_status: string?)
 	local candidates = base_candidates(cfg)
-	local jobs = {
-		{
-			args = { "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=" .. cfg.untracked },
-			timeout = M.SLOW_MS,
-		},
-		{ args = { "diff", "--numstat", "-z", "--" }, timeout = M.SLOW_MS },
-		{ args = { "diff", "--cached", "--numstat", "-z", "-M", "--" }, timeout = M.SLOW_MS },
-	}
+	local jobs: { { args: { string }, timeout: number } } = {}
+	if not have_status then
+		table.insert(jobs, { args = M.status_args(cfg), timeout = M.SLOW_MS })
+	end
+	table.insert(jobs, { args = { "diff", "--numstat", "-z", "--" }, timeout = M.SLOW_MS })
+	table.insert(jobs, { args = { "diff", "--cached", "--numstat", "-z", "-M", "--" }, timeout = M.SLOW_MS })
+	-- Results come back in order; the status job is absent when the poll fetched it.
+	local at = if have_status then 0 else 1
 	for _, ref in candidates do
 		table.insert(jobs, { args = { "rev-parse", "-q", "--verify", "--end-of-options", ref .. "^{commit}" }, timeout = M.FAST_MS })
 	end
 	M.all(root, jobs, function(rs)
-		if rs[1].status ~= 0 then
+		if not have_status and rs[1].status ~= 0 then
 			done(nil, M.reason(rs[1]))
 			return
 		end
-		local status = parse.status(rs[1].stdout, cfg.max_files)
-		parse.apply_counts(status.unstaged, parse.numstat(rs[2].stdout))
-		parse.apply_counts(status.staged, parse.numstat(rs[3].stdout))
+		local status = parse.status(have_status or rs[1].stdout, cfg.max_files)
+		parse.apply_counts(status.unstaged, parse.numstat(rs[at + 1].stdout))
+		parse.apply_counts(status.staged, parse.numstat(rs[at + 2].stdout))
 
 		local bases: { string } = {}
 		for i, ref in candidates do
-			if rs[3 + i].status == 0 then
+			if rs[at + 2 + i].status == 0 then
 				table.insert(bases, ref)
 			end
 		end
 		local base = if want_base and table.find(bases, want_base) then want_base else bases[1]
 		local snap: Snapshot = {
 			status = status,
+			raw = have_status or rs[1].stdout,
 			bases = bases,
 			base = base,
 			merge_base = nil,
@@ -214,6 +242,8 @@ function M.commit_files(root: string, sha: string, cap: number, done: (parse.Gro
 	end)
 end
 
+-- Throwing uncommitted work away. Unstaged edits are not recoverable from git
+-- afterwards, so every caller of this confirms first.
 export type DiffTarget = {
 	kind: string, -- "staged" | "unstaged" | "untracked" | "commit"
 	path: string,
@@ -240,6 +270,52 @@ local function diff_args(t: DiffTarget): { string }
 		table.insert(args, p)
 	end
 	return args
+end
+
+-- What `discard` would run, or nil when there is nothing to throw away (a file
+-- inside a commit is history, not working state).
+function M.discard_args(t: DiffTarget): { string }?
+	local paths: { string } = { t.path }
+	if t.orig then
+		paths = { t.orig, t.path }
+	end
+	local args: { string }
+	if t.kind == "staged" then
+		-- Both sides: the staged copy and the file in the worktree.
+		args = { "restore", "--staged", "--worktree", "--" }
+	elseif t.kind == "unstaged" then
+		args = { "restore", "--" }
+	elseif t.kind == "untracked" then
+		-- Deletes the file. `-d` as well when the entry is a directory.
+		args = if string.sub(t.path, -1) == "/" then { "clean", "-f", "-d", "--" } else { "clean", "-f", "--" }
+	else
+		return nil
+	end
+	for _, p in paths do
+		table.insert(args, p)
+	end
+	return args
+end
+
+-- A one-line description of what discarding does, for the confirmation.
+function M.discard_label(t: DiffTarget): string
+	if t.kind == "untracked" then
+		return "delete " .. t.path
+	elseif t.kind == "staged" then
+		return "discard staged and working changes to " .. t.path
+	end
+	return "discard changes to " .. t.path
+end
+
+function M.discard(root: string, t: DiffTarget, done: (string?) -> ())
+	local args = M.discard_args(t)
+	if args == nil then
+		done("nothing to discard there")
+		return
+	end
+	M.run(root, args, M.SLOW_MS, function(r)
+		done(if r.status == 0 then nil else M.reason(r))
+	end)
 end
 
 -- The unified diff for one file, truncated past MAX_DIFF_BYTES.

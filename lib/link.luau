@@ -8,6 +8,9 @@ local M = {}
 
 M.SCHEME = "tern-branch-changes"
 M.PREFIX = M.SCHEME .. "://diff?"
+M.VIEW_PREFIX = M.SCHEME .. "://view?"
+M.DISCARD_PREFIX = M.SCHEME .. "://discard?"
+M.EDIT_PREFIX = M.SCHEME .. "://edit?"
 
 export type DiffLink = {
 	root: string,
@@ -97,6 +100,82 @@ function M.from_args(args: { string }): DiffLink?
 		orig = if args[5] and args[5] ~= "" then args[5] else nil,
 	}
 	return out
+end
+
+-- Every link a block opens carries the block's own pane. A link the host opens
+-- through `cx:open` reaches the window without one (`req.pane` is nil), and the
+-- window needs it to act on the pane the link came from.
+local function pane_param(pane: number?): string
+	return if pane then "&pane=" .. tostring(pane) else ""
+end
+
+local function pane_of(query: string): number?
+	return tonumber(string.match(query, "&pane=(%d+)") or "")
+end
+
+-- `tern-branch-changes://view?root=…`: show the list block full width.
+function M.view_url(root: string, pane: number?): string
+	return M.VIEW_PREFIX .. "root=" .. encode(root) .. pane_param(pane)
+end
+
+-- The root and pane of a view link, or nil when `url` isn't one.
+function M.decode_view(url: string): (string?, number?)
+	if string.sub(url, 1, #M.VIEW_PREFIX) ~= M.VIEW_PREFIX then
+		return nil, nil
+	end
+	local query = string.sub(url, #M.VIEW_PREFIX + 1)
+	local root = string.match(query, "^root=([^&]+)")
+	if root == nil then
+		return nil, nil
+	end
+	local path = decode(root)
+	return (if path ~= "" then path else nil), pane_of(query)
+end
+
+-- `tern-branch-changes://discard?row=…`: the ↺ a file row carries. A span can
+-- hold a link but not an action, and a list row's own click wins over its
+-- parts, so this is how a per-row control reaches the block at all.
+function M.discard_url(row_id: string, pane: number?): string
+	return M.DISCARD_PREFIX .. "row=" .. encode(row_id) .. pane_param(pane)
+end
+
+function M.decode_discard(url: string): (string?, number?)
+	if string.sub(url, 1, #M.DISCARD_PREFIX) ~= M.DISCARD_PREFIX then
+		return nil, nil
+	end
+	local query = string.sub(url, #M.DISCARD_PREFIX + 1)
+	local row = string.match(query, "^row=([^&]+)")
+	if row == nil then
+		return nil, nil
+	end
+	local id = decode(row)
+	return (if id ~= "" then id else nil), pane_of(query)
+end
+
+-- `tern-branch-changes://edit?path=…&line=…`: open the file for editing in
+-- place of the pane the link came from, with the caret at `line`.
+function M.edit_url(path: string, line: number?, pane: number?): string
+	local url = M.EDIT_PREFIX .. "path=" .. encode(path)
+	if line then
+		url ..= "&line=" .. tostring(line)
+	end
+	return url .. pane_param(pane)
+end
+
+function M.decode_edit(url: string): (string?, number?, number?)
+	if string.sub(url, 1, #M.EDIT_PREFIX) ~= M.EDIT_PREFIX then
+		return nil, nil, nil
+	end
+	local query = string.sub(url, #M.EDIT_PREFIX + 1)
+	local path = string.match(query, "^path=([^&]+)")
+	if path == nil then
+		return nil, nil, nil
+	end
+	local decoded = decode(path)
+	if decoded == "" then
+		return nil, nil, nil
+	end
+	return decoded, tonumber(string.match(query, "&line=(%d+)") or ""), pane_of(query)
 end
 
 -- Identity of a diff view, for focusing an open block instead of opening another.

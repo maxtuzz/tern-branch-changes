@@ -6,6 +6,7 @@
 
 local git = require("./git")
 local link = require("./link")
+local parse = require("./parse")
 local util = require("./util")
 
 local ui = tern.ui
@@ -87,10 +88,38 @@ local function heading(t: link.DiffLink): Node
 	return ui.text(spans)
 end
 
+-- Reading a diff usually ends in wanting to change the file. `e`, or the chip,
+-- swaps this pane for the file itself, with the caret at the first change.
+local function edit(state: DiffState, cx: BlockCx)
+	local t = state.target
+	if t == nil then
+		return
+	end
+	local abs = t.root .. "/" .. t.path
+	if not tern.fs.exists(abs) then
+		cx:toast("info", "Not in the worktree", t.path .. " is not there to edit")
+		return
+	end
+	-- For a commit the patch describes that revision, so its line numbers mean
+	-- nothing for the file as it stands now: open it at the top instead.
+	local line = if t.kind ~= "commit" and state.text then parse.first_hunk_line(state.text) else nil
+	cx:open(link.edit_url(abs, line, cx.pane))
+end
+
 local function chips(t: link.DiffLink): Node
 	local badges: { Node } = { ui.badge(KIND_LABEL[t.kind] or t.kind, if t.kind == "commit" then "neutral" else "warning") }
 	if t.sha then
 		table.insert(badges, ui.badge(string.sub(t.sha, 1, 8), "neutral"))
+	end
+	do
+		local chip = ui.badge("edit", "accent")
+		local p: { [string]: any } = chip.p or {}
+		p.key, p.shrink, p.actions = "edit", 0, { click = "edit" }
+		p.title = if t.kind == "commit"
+			then "Open the current file here (e)"
+			else "Open this file here, at the first change (e)"
+		chip.p = p
+		table.insert(badges, chip)
 	end
 	return ui.row(badges)
 end
@@ -151,11 +180,17 @@ local def: BlockDef<DiffState> = {
 		end
 		table.insert(dock, ui.node("kbd", { keys = { "r" } }))
 		table.insert(dock, ui.text({ ui.span("reload", "dim") }))
-		if t and t.kind ~= "commit" then
+		if t then
 			table.insert(dock, ui.node("kbd", { keys = { "e" } }))
-			table.insert(dock, ui.text({ ui.span("edit file", "dim") }))
+			table.insert(dock, ui.text({ ui.span("edit here", "dim") }))
 		end
 		return { main = ui.col(main), dock = ui.col({ ui.row(dock) }) }
+	end,
+
+	event = function(state, ev, cx)
+		if ev.ev == "action" and ev.act == "edit" then
+			edit(state, cx)
+		end
 	end,
 
 	key = function(state, key, cx)
@@ -166,12 +201,7 @@ local def: BlockDef<DiffState> = {
 		if key.name == "r" then
 			load(state)
 		elseif key.name == "e" and t then
-			local abs = t.root .. "/" .. t.path
-			if tern.fs.exists(abs) then
-				cx:open(abs)
-			else
-				cx:toast("info", "Deleted in the worktree", t.path)
-			end
+			edit(state, cx)
 		else
 			return false
 		end

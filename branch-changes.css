@@ -1,0 +1,51 @@
+/* Tern's own sheet gives a section body `padding-left: 22px`, `margin-left: 7px`
+   and an inset guide line. In a sidebar that space is better spent on file names
+   and commit subjects, so rows sit flush under their heading instead. Scoped to
+   this plugin's own surfaces, so other plugins' sections keep Tern's spacing. */
+[data-surface^='plugin.branch-changes.'] .sf-section > .sf-section-body {
+	padding: 1px 0 5px 0;
+	margin-left: 0;
+	box-shadow: none;
+}
+
+/* The groups inside Changes are one step in, enough to read as a hierarchy
+   without pushing every row off the left edge. */
+[data-surface^='plugin.branch-changes.'] [data-role='branch-changes.uncommitted'] > .sf-section-body {
+	padding-left: 8px;
+}
+
+/* A row centres its children, so in the full view a tall file list pushed the
+   diff column half a screen down. The split keeps both columns at the top. */
+[data-surface='plugin.branch-changes.view'] [data-role='branch-changes.split'] {
+	align-items: flex-start;
+}
+
+/* The ↺ on a file row. Tern draws a link span as `.sf-link`, coloured
+   `--sf-c-link` (blue) at text size, which reads as a web link rather than a
+   destructive control — so it is restyled here: bigger, in the error colour,
+   and, like VS Code's discard button, only on the row under the pointer. The
+   selected row keeps it visible for anyone working from the keyboard, and an
+   armed row always shows it. These are Tern's structural classes, which the
+   docs say may change between versions. */
+[data-surface^='plugin.branch-changes.'] .sf-item .sf-link,
+[data-surface^='plugin.branch-changes.'] .sf-item a[href],
+[data-surface^='plugin.branch-changes.'] .sf-item .ilink {
+	font-size: 1.5em;
+	line-height: 1;
+	color: var(--sf-c-error);
+	text-decoration: none;
+	padding: 0 2px;
+	opacity: 0;
+}
+
+[data-surface^='plugin.branch-changes.'] .sf-item:hover .sf-link,
+[data-surface^='plugin.branch-changes.'] .sf-item:hover a[href],
+[data-surface^='plugin.branch-changes.'] .sf-item:hover .ilink,
+[data-surface^='plugin.branch-changes.'] .sf-item.sel .sf-link,
+[data-surface^='plugin.branch-changes.'] .sf-item.sel a[href],
+[data-surface^='plugin.branch-changes.'] .sf-item.sel .ilink,
+[data-surface^='plugin.branch-changes.'] .sf-item[data-tone='error'] .sf-link,
+[data-surface^='plugin.branch-changes.'] .sf-item[data-tone='error'] a[href],
+[data-surface^='plugin.branch-changes.'] .sf-item[data-tone='error'] .ilink {
+	opacity: 1;
+}

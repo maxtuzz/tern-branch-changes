@@ -6,6 +6,7 @@ description = "Branch-scoped changes: uncommitted + expandable commits + inline 
 icon = "git-branch"
 host = "host.luau"
 window = "window.luau"
+styles = ["branch-changes.css"]
 
 [[blocks]]
 id = "view"

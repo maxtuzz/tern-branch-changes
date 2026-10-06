@@ -185,6 +185,18 @@ function M.commit_files(out: string, cap: number): Group
 	return g
 end
 
+-- The first changed line in the new file, from a patch's first hunk header
+-- (`@@ -a,b +c,d @@`). Where to put the caret when you switch from reading a
+-- diff to editing the file.
+function M.first_hunk_line(patch: string): number?
+	local line = string.match(patch, "\n@@ %-[%d,]+ %+(%d+)")
+	if line == nil then
+		line = string.match(patch, "^@@ %-[%d,]+ %+(%d+)")
+	end
+	local n = tonumber(line)
+	return if n and n > 0 then n else nil
+end
+
 M.LOG_FORMAT = "%x1e%H%x1f%h%x1f%an%x1f%ct%x1f%s"
 
 -- `git log --format=<LOG_FORMAT>`.

@@ -24,6 +24,13 @@ export type State = {
 	files: { [string]: CommitFiles }, -- loaded commit file lists, by sha
 	diffs: { [string]: DiffState }, -- open diffs, by row id
 	sel: string?, -- selected row id
+	pane: number?, -- this block's pane, which its links carry back to the window
+	me: string?, -- this repo's user.name, so commits by others stand out
+	armed: string?, -- row id waiting for a second press to discard its changes
+	cost: number?, -- how long `git status` takes here, in ms
+	hint: string?, -- a standing suggestion, such as turning fsmonitor on
+	sigs: { [string]: string }, -- uncommitted row id -> its last seen status/counts
+	fresh: { [string]: number }, -- uncommitted row id -> os.time() it last changed
 }
 
 export type Row = {
@@ -48,6 +55,13 @@ function M.new(dir: string, root: string?, base_pref: string?): State
 		files = {},
 		diffs = {},
 		sel = nil,
+		pane = nil,
+		me = nil,
+		armed = nil,
+		cost = nil,
+		hint = nil,
+		sigs = {},
+		fresh = {},
 	}
 end
 
@@ -116,6 +130,12 @@ function M.find(rows: { Row }, id: string?): (Row?, number?)
 	return nil, nil
 end
 
+-- Whether this row holds uncommitted work that can be thrown away.
+function M.discardable(row: Row?): boolean
+	local t = if row then row.target else nil
+	return t ~= nil and t.kind ~= "commit"
+end
+
 -- Moves the selection by `delta` rows, clamped; starts at the top when nothing is selected.
 function M.move(state: State, delta: number)
 	local rows = M.rows(state)
@@ -126,6 +146,62 @@ function M.move(state: State, delta: number)
 	local _, i = M.find(rows, state.sel)
 	local next = if i then math.clamp(i + delta, 1, #rows) else 1
 	state.sel = rows[next].id
+	state.armed = nil -- moving away cancels a pending discard
+end
+
+-- How many seconds ago this file last changed, while that is still recent.
+-- Drives the "just now" cue that makes an agent's live edits visible.
+M.FRESH_SECONDS = 180
+
+function M.fresh_age(state: State, row_id: string): number?
+	local at = state.fresh[row_id]
+	if at == nil then
+		return nil
+	end
+	local since = os.time() - at
+	return if since <= M.FRESH_SECONDS then math.max(since, 0) else nil
+end
+
+local function signature(f: parse.FileEntry): string
+	return table.concat({ f.code, tostring(f.add or -1), tostring(f.del or -1), f.orig or "" }, "/")
+end
+
+-- Notes which uncommitted files changed since the last snapshot and floats the
+-- freshest to the top of their group. The first snapshot only records, so a
+-- block that just opened doesn't mark everything as new.
+function M.note_changes(state: State, first: boolean)
+	local snap = state.snap
+	if not snap then
+		return
+	end
+	local now = os.time()
+	local seen: { [string]: boolean } = {}
+	for _, g in M.GROUPS do
+		local group: parse.Group = (snap.status :: any)[g.key]
+		for _, f in group.files do
+			local id = M.file_row_id(g.kind, f.path, nil)
+			local sig = signature(f)
+			seen[id] = true
+			if not first and state.sigs[id] ~= sig then
+				state.fresh[id] = now
+			end
+			state.sigs[id] = sig
+		end
+		table.sort(group.files, function(a: parse.FileEntry, b: parse.FileEntry): boolean
+			local fa = state.fresh[M.file_row_id(g.kind, a.path, nil)] or 0
+			local fb = state.fresh[M.file_row_id(g.kind, b.path, nil)] or 0
+			if fa ~= fb then
+				return fa > fb
+			end
+			return a.path < b.path
+		end)
+	end
+	for id in state.sigs do
+		if not seen[id] then
+			state.sigs[id] = nil
+			state.fresh[id] = nil
+		end
+	end
 end
 
 -- Drops cached state that no longer matches the snapshot after a refresh.

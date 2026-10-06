@@ -28,5 +28,10 @@ return {
 		["git --no-optional-locks -c core.quotepath=off -c color.ui=never show --no-color --format= -M --diff-merges=first-parent 44317a4de6f6cc50b6c140ed7ee398be9cfa22d8 -- a.txt docs/b c.txt"] = { status = 0, stdout = "diff --git a/a.txt b/docs/b c.txt\nsimilarity index 100%\nrename from a.txt\nrename to docs/b c.txt\n", stderr = "" },
 		["git --no-optional-locks -c core.quotepath=off -c color.ui=never diff-tree -r -z --raw --numstat -M --root --no-commit-id --diff-merges=first-parent 7de41593e56ec3d762e50952a1358df52a705d64 --"] = { status = 0, stdout = ":100644 100644 5626abf0f72e58d7a153368ba57db4c673c0e171 814f4a422927b82f5f8a43f8fab6d3839e3983f2 M\000a.txt\0001\t0\ta.txt\000", stderr = "" },
 		["git --no-optional-locks -c core.quotepath=off -c color.ui=never show --no-color --format= -M --diff-merges=first-parent 7de41593e56ec3d762e50952a1358df52a705d64 -- a.txt"] = { status = 0, stdout = "diff --git a/a.txt b/a.txt\nindex 5626abf..814f4a4 100644\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1,2 @@\n one\n+two\n", stderr = "" },
+		["git --no-optional-locks -c core.quotepath=off -c color.ui=never config --get user.name"] = { status = 0, stdout = "Ada\n", stderr = "" },
+		["git --no-optional-locks -c core.quotepath=off -c color.ui=never config --get core.fsmonitor"] = { status = 1, stdout = "", stderr = "" },
+		["git --no-optional-locks -c core.quotepath=off -c color.ui=never restore -- lib/util.lua"] = { status = 0, stdout = "", stderr = "" },
+		["git --no-optional-locks -c core.quotepath=off -c color.ui=never restore --staged --worktree -- new.lua"] = { status = 0, stdout = "", stderr = "" },
+		["git --no-optional-locks -c core.quotepath=off -c color.ui=never clean -f -- notes with space.md"] = { status = 0, stdout = "", stderr = "" },
 	},
 }
