@@ -129,7 +129,7 @@ local function file_item(state: model.State, f: parse.FileEntry, row_id: string,
 	end
 	local since = model.fresh_age(state, row_id)
 	if since then
-		local when = if since < 10 then "just now" else util.age(since) .. " ago"
+		local when = if since < 60 then "just now" else util.age(since) .. " ago"
 		table.insert(detail, ui.span((if #detail > 0 then "  " else "") .. when, "accent"))
 	end
 	local title = STATUS_NAME[f.code] or f.code

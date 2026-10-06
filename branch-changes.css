@@ -20,19 +20,32 @@
 	align-items: flex-start;
 }
 
-/* The ↺ on a file row is a link span, which Tern draws as `a[href]` — the only
-   clickable part a list row can hold. At text size it reads as punctuation, so
-   it is scaled up here and lights up under the pointer. */
-[data-surface^='plugin.branch-changes.'] .sf-item-value a[href] {
-	font-size: 1.4em;
+/* The ↺ on a file row. Tern draws a link span as `.sf-link`, coloured
+   `--sf-c-link` (blue) at text size, which reads as a web link rather than a
+   destructive control — so it is restyled here: bigger, in the error colour,
+   and, like VS Code's discard button, only on the row under the pointer. The
+   selected row keeps it visible for anyone working from the keyboard, and an
+   armed row always shows it. These are Tern's structural classes, which the
+   docs say may change between versions. */
+[data-surface^='plugin.branch-changes.'] .sf-item .sf-link,
+[data-surface^='plugin.branch-changes.'] .sf-item a[href],
+[data-surface^='plugin.branch-changes.'] .sf-item .ilink {
+	font-size: 1.5em;
 	line-height: 1;
+	color: var(--sf-c-error);
 	text-decoration: none;
-	padding: 0 3px;
-	opacity: 0.5;
+	padding: 0 2px;
+	opacity: 0;
 }
 
-[data-surface^='plugin.branch-changes.'] .sf-item-value a[href]:hover,
-[data-surface^='plugin.branch-changes.'] .sf-item.sel .sf-item-value a[href],
-[data-surface^='plugin.branch-changes.'] .sf-item[data-tone='error'] .sf-item-value a[href] {
+[data-surface^='plugin.branch-changes.'] .sf-item:hover .sf-link,
+[data-surface^='plugin.branch-changes.'] .sf-item:hover a[href],
+[data-surface^='plugin.branch-changes.'] .sf-item:hover .ilink,
+[data-surface^='plugin.branch-changes.'] .sf-item.sel .sf-link,
+[data-surface^='plugin.branch-changes.'] .sf-item.sel a[href],
+[data-surface^='plugin.branch-changes.'] .sf-item.sel .ilink,
+[data-surface^='plugin.branch-changes.'] .sf-item[data-tone='error'] .sf-link,
+[data-surface^='plugin.branch-changes.'] .sf-item[data-tone='error'] a[href],
+[data-surface^='plugin.branch-changes.'] .sf-item[data-tone='error'] .ilink {
 	opacity: 1;
 }

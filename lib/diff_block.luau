@@ -95,16 +95,15 @@ local function edit(state: DiffState, cx: BlockCx)
 	if t == nil then
 		return
 	end
-	if t.kind == "commit" then
-		cx:toast("info", "That is a commit's version", "Open the file from the Changes section to edit it.")
-		return
-	end
 	local abs = t.root .. "/" .. t.path
 	if not tern.fs.exists(abs) then
-		cx:toast("info", "Deleted in the worktree", t.path)
+		cx:toast("info", "Not in the worktree", t.path .. " is not there to edit")
 		return
 	end
-	cx:open(link.edit_url(abs, if state.text then parse.first_hunk_line(state.text) else nil))
+	-- For a commit the patch describes that revision, so its line numbers mean
+	-- nothing for the file as it stands now: open it at the top instead.
+	local line = if t.kind ~= "commit" and state.text then parse.first_hunk_line(state.text) else nil
+	cx:open(link.edit_url(abs, line))
 end
 
 local function chips(t: link.DiffLink): Node
@@ -112,11 +111,13 @@ local function chips(t: link.DiffLink): Node
 	if t.sha then
 		table.insert(badges, ui.badge(string.sub(t.sha, 1, 8), "neutral"))
 	end
-	if t.kind ~= "commit" then
+	do
 		local chip = ui.badge("edit", "accent")
 		local p: { [string]: any } = chip.p or {}
 		p.key, p.shrink, p.actions = "edit", 0, { click = "edit" }
-		p.title = "Open this file here, at the first change (e)"
+		p.title = if t.kind == "commit"
+			then "Open the current file here (e)"
+			else "Open this file here, at the first change (e)"
 		chip.p = p
 		table.insert(badges, chip)
 	end
@@ -179,7 +180,7 @@ local def: BlockDef<DiffState> = {
 		end
 		table.insert(dock, ui.node("kbd", { keys = { "r" } }))
 		table.insert(dock, ui.text({ ui.span("reload", "dim") }))
-		if t and t.kind ~= "commit" then
+		if t then
 			table.insert(dock, ui.node("kbd", { keys = { "e" } }))
 			table.insert(dock, ui.text({ ui.span("edit here", "dim") }))
 		end

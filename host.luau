@@ -218,7 +218,7 @@ end
 -- What a tick should cost us: the configured pace, stretched when status is
 -- slow here, stretched again while nothing is happening.
 local function pace(b: Block): number
-	local floor = b.state.cfg.poll_ms
+	local floor = b.state.cfg.poll_ms or 2000
 	local wait = math.max(floor, (b.state.cost or 0) * DUTY)
 	if b.quiet >= QUIET_ROUNDS then
 		wait = math.max(wait, IDLE_MS)

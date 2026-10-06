@@ -657,7 +657,7 @@ test("e in a diff block swaps the pane for the file at the first change", functi
 	eq(chip.p.actions.click, "edit")
 end)
 
-test("a commit's version is read-only, and a deleted file says so", function()
+test("editing from a commit's diff opens the file as it is now", function()
 	start()
 	local def = S.blocks.diff
 	table.insert(S.panes, { pane = 14, cwd = F.root, program = "branch-changes.diff", title = "", busy = false })
@@ -665,11 +665,14 @@ test("a commit's version is read-only, and a deleted file says so", function()
 	local sha = "38aa7362a0b9e7d1c2a43b85d9378d913661c160"
 	local state = def.init(cx, link.to_args({ root = F.root, kind = "commit", path = "new.lua", sha = sha }), nil)
 	S.drain()
+	S.files[F.root .. "/new.lua"] = true
 	def.key(state, { name = "e", ctrl = false, alt = false, shift = false, meta = false }, cx)
-	eq(S.effects[#S.effects][1], "toast", "a commit's copy cannot be edited in place")
-	eq(find(def.view(state, cx).main, function(n)
+	local path, line = link.decode_edit(S.effects[#S.effects][2])
+	eq(path, F.root .. "/new.lua", "the working copy, not the commit's")
+	eq(line, nil, "and at the top, since the patch's lines describe that revision")
+	assert(find(def.view(state, cx).main, function(n)
 		return n.p and n.p.key == "edit"
-	end), nil, "and it offers no edit chip")
+	end), "the chip is offered here too")
 	-- A tracked file that is gone from the worktree.
 	S.files = {}
 	local gone = def.init(S.cx(15, F.root), link.to_args({ root = F.root, kind = "unstaged", path = "lib/util.lua" }), nil)
