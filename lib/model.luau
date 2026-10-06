@@ -25,6 +25,7 @@ export type State = {
 	diffs: { [string]: DiffState }, -- open diffs, by row id
 	sel: string?, -- selected row id
 	me: string?, -- this repo's user.name, so commits by others stand out
+	armed: string?, -- row id waiting for a second press to discard its changes
 	cost: number?, -- how long `git status` takes here, in ms
 	hint: string?, -- a standing suggestion, such as turning fsmonitor on
 	sigs: { [string]: string }, -- uncommitted row id -> its last seen status/counts
@@ -54,6 +55,7 @@ function M.new(dir: string, root: string?, base_pref: string?): State
 		diffs = {},
 		sel = nil,
 		me = nil,
+		armed = nil,
 		cost = nil,
 		hint = nil,
 		sigs = {},
@@ -126,6 +128,12 @@ function M.find(rows: { Row }, id: string?): (Row?, number?)
 	return nil, nil
 end
 
+-- Whether this row holds uncommitted work that can be thrown away.
+function M.discardable(row: Row?): boolean
+	local t = if row then row.target else nil
+	return t ~= nil and t.kind ~= "commit"
+end
+
 -- Moves the selection by `delta` rows, clamped; starts at the top when nothing is selected.
 function M.move(state: State, delta: number)
 	local rows = M.rows(state)
@@ -136,6 +144,7 @@ function M.move(state: State, delta: number)
 	local _, i = M.find(rows, state.sel)
 	local next = if i then math.clamp(i + delta, 1, #rows) else 1
 	state.sel = rows[next].id
+	state.armed = nil -- moving away cancels a pending discard
 end
 
 -- How many seconds ago this file last changed, while that is still recent.

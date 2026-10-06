@@ -324,6 +324,43 @@ local function activate(b: Block, row: model.Row)
 	end
 end
 
+local ARM_MS = 6000
+
+-- Discarding is in two beats: the first press arms the row and says what will
+-- happen, the second does it. Unstaged work thrown away here is not in git
+-- anywhere, so a single stray keypress must never be enough.
+local function discard(b: Block, row: model.Row)
+	local root, target = b.state.root, row.target
+	if not root or not target or not model.discardable(row) then
+		return
+	end
+	if b.state.armed ~= row.id then
+		b.state.armed = row.id
+		local armed = row.id
+		tern.timer(ARM_MS, function()
+			if alive(b.cx.pane) and b.state.armed == armed then
+				b.state.armed = nil
+				b.cx:render()
+			end
+		end)
+		return
+	end
+	b.state.armed = nil
+	local label = git.discard_label(target)
+	git.discard(root, target, function(err)
+		if not alive(b.cx.pane) then
+			return
+		end
+		if err then
+			b.cx:toast("error", "Could not discard", err)
+		else
+			b.cx:toast("success", "Discarded", label)
+		end
+		wake(b)
+		refresh(b)
+	end)
+end
+
 local function cycle_base(b: Block, step: number)
 	local snap = b.state.snap
 	if not snap or #snap.bases < 2 then
@@ -444,6 +481,8 @@ local def: BlockDef<model.State> = {
 			end
 		elseif name == "f" then
 			open_full(b)
+		elseif name == "x" and row and model.discardable(row) then
+			discard(b, row)
 		elseif name == "e" and row and row.kind == "file" then
 			edit_file(b, row)
 		elseif name == "y" and row then
@@ -454,7 +493,11 @@ local def: BlockDef<model.State> = {
 		elseif name == "b" then
 			cycle_base(b, if key.shift then -1 else 1)
 		elseif name == "escape" then
-			state.diffs = {}
+			if state.armed then
+				state.armed = nil
+			else
+				state.diffs = {}
+			end
 		else
 			return false
 		end
@@ -475,6 +518,9 @@ local def: BlockDef<model.State> = {
 		elseif ev.ev == "select" or ev.ev == "activate" then
 			local row = model.find(model.rows(state), b.ids[ev.item or ""])
 			if row then
+				if state.armed ~= row.id then
+					state.armed = nil
+				end
 				state.sel = row.id
 				if ev.ev == "activate" then
 					open_diff(b, row)
@@ -485,6 +531,9 @@ local def: BlockDef<model.State> = {
 		elseif ev.ev == "action" and ev.act == "file" then
 			local row = model.find(model.rows(state), ev.value)
 			if row then
+				if state.armed ~= row.id then
+					state.armed = nil
+				end
 				state.sel = row.id
 				if has_mod(ev.mods, { "alt", "meta" }) then
 					edit_file(b, row)
@@ -501,6 +550,12 @@ local def: BlockDef<model.State> = {
 		elseif ev.ev == "action" and ev.act == "commit" and type(ev.value) == "string" then
 			state.sel = model.commit_row_id(ev.value)
 			toggle_commit(b, ev.value)
+		elseif ev.ev == "action" and ev.act == "discard" then
+			local row = model.find(model.rows(state), ev.value)
+			if row then
+				state.sel = row.id
+				discard(b, row)
+			end
 		elseif ev.ev == "action" and ev.act == "base" and type(ev.value) == "string" then
 			state.base_pref = ev.value
 			refresh(b)

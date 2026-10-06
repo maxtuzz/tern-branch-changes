@@ -741,6 +741,113 @@ test("Changes and Commits are both plain sections, no card ring", function()
 	end), nil, "nothing in the view draws a card box")
 end)
 
+-- discarding uncommitted work
+
+test("x arms a row and says what it will do; a second x discards", function()
+	local def, cx, state = start()
+	state.sel = "unstaged:lib/util.lua"
+	key(def, state, cx, "x")
+	eq(state.armed, "unstaged:lib/util.lua", "the first press only arms it")
+	local ran = #S.ran
+	eq(#S.ran, ran, "nothing has run yet")
+	local item = find(row_of(def.view(state, cx).main, "unstaged"), function(n)
+		return n.k == "item"
+	end)
+	eq(item.p.tone, "error")
+	eq(item.p.icon, "trash")
+	assert(string.find(table.concat(texts(item), "|"), "press x again", 1, true), "the row says what happens next")
+	key(def, state, cx, "x")
+	eq(state.armed, nil)
+	eq(S.ran[ran + 1], PREFIX .. "restore -- lib/util.lua", "it discards the worktree copy")
+	S.drain()
+	local toast = S.effects[#S.effects]
+	eq(toast[1], "toast")
+	eq(toast[2], "success")
+end)
+
+test("escape and moving away cancel a pending discard", function()
+	local def, cx, state = start()
+	state.sel = "unstaged:lib/util.lua"
+	key(def, state, cx, "x")
+	key(def, state, cx, "escape")
+	eq(state.armed, nil, "escape stands down")
+	eq(next(state.diffs), nil)
+	key(def, state, cx, "x")
+	key(def, state, cx, "j")
+	eq(state.armed, nil, "so does moving to another row")
+	local ran = #S.ran
+	key(def, state, cx, "x")
+	key(def, state, cx, "x")
+	assert(#S.ran > ran, "and the next row arms from scratch")
+end)
+
+test("discard runs the right command for each kind of change", function()
+	local git = require("../lib/git")
+	eq(table.concat(git.discard_args({ kind = "unstaged", path = "a.lua" }) :: any, " "), "restore -- a.lua")
+	eq(
+		table.concat(git.discard_args({ kind = "staged", path = "a.lua" }) :: any, " "),
+		"restore --staged --worktree -- a.lua",
+		"a staged file loses both copies"
+	)
+	eq(table.concat(git.discard_args({ kind = "untracked", path = "new.md" }) :: any, " "), "clean -f -- new.md")
+	eq(
+		table.concat(git.discard_args({ kind = "untracked", path = "scratch/" }) :: any, " "),
+		"clean -f -d -- scratch/",
+		"an untracked folder needs -d"
+	)
+	eq(
+		table.concat(git.discard_args({ kind = "staged", path = "new.lua", orig = "old.lua" }) :: any, " "),
+		"restore --staged --worktree -- old.lua new.lua",
+		"a rename names both paths"
+	)
+	eq(git.discard_args({ kind = "commit", path = "a.lua", sha = "abc" }), nil, "history is not working state")
+end)
+
+test("a file inside a commit offers no discard", function()
+	local def, cx, state = start()
+	local move = state.snap.commits[3]
+	state.sel = "c:" .. move.sha
+	key(def, state, cx, "enter")
+	key(def, state, cx, "j")
+	local ran = #S.ran
+	eq(key(def, state, cx, "x"), false, "x does nothing there")
+	eq(state.armed, nil)
+	eq(#S.ran, ran)
+	local wide = view.build(state, 140)
+	local chip = find(wide.main, function(n)
+		return n.p and n.p.key == "discard"
+	end)
+	eq(chip.p.hidden, true, "and the full view hides the chip")
+end)
+
+test("the full view's discard chip takes two clicks too", function()
+	local def, cx, state = start()
+	state.sel = "staged:new.lua"
+	local chip = find(view.build(state, 140).main, function(n)
+		return n.p and n.p.key == "discard"
+	end)
+	eq(chip.p.text, "discard")
+	eq(chip.p.actions.click, "discard=staged:new.lua")
+	def.event(state, { ev = "action", act = "discard", value = "staged:new.lua" }, cx)
+	eq(state.armed, "staged:new.lua")
+	chip = find(view.build(state, 140).main, function(n)
+		return n.p and n.p.key == "discard"
+	end)
+	eq(chip.p.text, "confirm discard")
+	eq(chip.p.tone, "error")
+	local ran = #S.ran
+	def.event(state, { ev = "action", act = "discard", value = "staged:new.lua" }, cx)
+	eq(S.ran[ran + 1], PREFIX .. "restore --staged --worktree -- new.lua")
+end)
+
+test("the selected row advertises the discard key", function()
+	local def, cx, state = start()
+	local item = find(def.view(state, cx).main, function(n)
+		return n.k == "item" and n.p.hint ~= nil
+	end)
+	eq(item.p.hint[1], "x", "a keycap on the selected row")
+end)
+
 test("change counts are toned, not struck through", function()
 	local def, cx, state = start()
 	local v = def.view(state, cx)

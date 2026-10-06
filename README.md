@@ -42,6 +42,7 @@ Commits 3
 
 - **Header:** two rows that never wrap. The branch name takes the first row with the base as one chip on its right; click it (or press `b`) to cycle to the next base. The second row holds short status chips: `↑n`/`↓n` for ahead and behind, the uncommitted count, and the branch totals. Every chip carries a tooltip with the long form.
 - **File rows:** the file name is the label, its folder dim beside it, the icon tinted by status (modified warning, added success, deleted error, renamed/copied info, conflict error, untracked muted). `+n -n` and the status letter are right-aligned, and the tooltip gives the full path and status.
+- **Discarding:** the selected row shows an `x` keycap. Pressing it arms the row (red, with a `trash` icon and what will happen); pressing it again runs `git restore` — or `git clean` for an untracked file. This cannot be undone from git, which is why it takes two presses and never a single click.
 - **Live work:** a file whose status or line counts changed since the last refresh is marked `just now` and floats to the top of its group for three minutes, so an agent's edits are visible as they land. The footer carries a live timer showing how old the picture is.
 - **Commits:** one line each, no card borders: subject (truncated) with the age right-aligned. The icon stays the same whether a commit is expanded or not, because an icon name Tern doesn't know draws nothing and the empty slot shifts the row. The SHA waits in the tooltip until the pane is wide, because a row's value column reserves up to 40% of the width and that comes straight out of the subject. Unpushed commits are toned. The author appears only when it isn't this repo's `user.name`. Clicking a commit expands its files as the same file rows.
 - **Footer:** hints are added only while they fit the pane, so nothing wraps mid-word; a narrow sidebar simply shows fewer.
@@ -67,6 +68,7 @@ In the full view a click loads the diff into the hero instead of folding it away
 | click, `enter` / `space` | File: show its diff — inline under the row in the sidebar, in the hero column in the full view. Commit: expand it (files load lazily) |
 | double-click, `o` | Open the file's diff in its own **File diff** block beside this one. If that diff is already open, focus it. Works for deleted files too |
 | `e`, ⌥-click or ⌘-click | Edit the worktree file in a Tern file block. For a deleted file it explains that and suggests `o` instead |
+| `x`, the **discard** chip in the full view | Throw away a file's uncommitted changes. Two steps: the first press arms the row, which turns red and says what it will do; the second does it, and `escape` or moving away stands down. Staged files lose the staged copy and the working one, an untracked file is deleted, and a file inside a commit offers nothing |
 | `y` | Copy the selected path or commit SHA |
 | `r` | Refresh |
 | `b` / `B`, click the base chip | Cycle the base ref |
@@ -157,6 +159,7 @@ The tests run the real `host.luau` against a stub `tern` (`tests/stub.luau`) and
 - **A row centres its children** (`align-items: center` in Tern's sheet), which in the full view pushed the diff column half a screen down beside a tall list. The plugin sheet sets `flex-start` on the split.
 - **A region root is the region itself**: its `role` goes on the region element and its own content isn't drawn, so the split row has to be a child of a `col` root rather than the root.
 - **No pane widths.** `PaneInfo` carries no size, so "which pane is roomiest" is worked out from the tab's split-tree ratios.
+- **A list row has one icon slot and no children**, so a per-row revert button isn't possible; the row advertises the key with a keycap (`hint`) instead, and the full view's hero gets a real chip. `actions` carries `click`, `dblclick` and `menu`, but the menu payload's shape isn't in these docs, so no right-click menu is built.
 - **A small icon set.** There is `chev-r` but no down chevron, so a row can't show open/closed state by swapping chevrons; unknown names silently draw nothing.
 - **No hover state.** Plugins see clicks, not hovers, so anything "on hover" is a `title` tooltip instead; that is where the long forms of the chips and rows live.
 - **No menus for a plugin's own nodes.** `actions` carries `click` and `dblclick`, so the base picker is one chip that cycles rather than a dropdown.

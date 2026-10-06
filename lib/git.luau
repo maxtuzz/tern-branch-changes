@@ -242,6 +242,8 @@ function M.commit_files(root: string, sha: string, cap: number, done: (parse.Gro
 	end)
 end
 
+-- Throwing uncommitted work away. Unstaged edits are not recoverable from git
+-- afterwards, so every caller of this confirms first.
 export type DiffTarget = {
 	kind: string, -- "staged" | "unstaged" | "untracked" | "commit"
 	path: string,
@@ -268,6 +270,52 @@ local function diff_args(t: DiffTarget): { string }
 		table.insert(args, p)
 	end
 	return args
+end
+
+-- What `discard` would run, or nil when there is nothing to throw away (a file
+-- inside a commit is history, not working state).
+function M.discard_args(t: DiffTarget): { string }?
+	local paths: { string } = { t.path }
+	if t.orig then
+		paths = { t.orig, t.path }
+	end
+	local args: { string }
+	if t.kind == "staged" then
+		-- Both sides: the staged copy and the file in the worktree.
+		args = { "restore", "--staged", "--worktree", "--" }
+	elseif t.kind == "unstaged" then
+		args = { "restore", "--" }
+	elseif t.kind == "untracked" then
+		-- Deletes the file. `-d` as well when the entry is a directory.
+		args = if string.sub(t.path, -1) == "/" then { "clean", "-f", "-d", "--" } else { "clean", "-f", "--" }
+	else
+		return nil
+	end
+	for _, p in paths do
+		table.insert(args, p)
+	end
+	return args
+end
+
+-- A one-line description of what discarding does, for the confirmation.
+function M.discard_label(t: DiffTarget): string
+	if t.kind == "untracked" then
+		return "delete " .. t.path
+	elseif t.kind == "staged" then
+		return "discard staged and working changes to " .. t.path
+	end
+	return "discard changes to " .. t.path
+end
+
+function M.discard(root: string, t: DiffTarget, done: (string?) -> ())
+	local args = M.discard_args(t)
+	if args == nil then
+		done("nothing to discard there")
+		return
+	end
+	M.run(root, args, M.SLOW_MS, function(r)
+		done(if r.status == 0 then nil else M.reason(r))
+	end)
 end
 
 -- The unified diff for one file, truncated past MAX_DIFF_BYTES.

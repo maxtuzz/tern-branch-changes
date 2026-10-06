@@ -109,7 +109,7 @@ end
 -- A file row: file name as the label, its folder (and rename source) dim beside
 -- it, the icon tinted by status. A file an agent touched since the last refresh
 -- carries an accent "just now", so live work stands out in the list.
-local function file_item(state: model.State, f: parse.FileEntry, row_id: string, open: boolean, lay: Layout): { [string]: any }
+local function file_item(state: model.State, f: parse.FileEntry, row_id: string, open: boolean, lay: Layout, kind: string): { [string]: any }
 	local dir, base = util.split_path(f.path)
 	local detail: { Span } = {}
 	if dir ~= "" then
@@ -124,6 +124,19 @@ local function file_item(state: model.State, f: parse.FileEntry, row_id: string,
 		table.insert(detail, ui.span((if #detail > 0 then "  " else "") .. when, "accent"))
 	end
 	local title = STATUS_NAME[f.code] or f.code
+	-- Armed for discard: the row says so plainly, since the next press is final.
+	if state.armed == row_id then
+		local gone = if kind == "untracked" then "delete this file" else "discard these changes"
+		return {
+			label = { ui.span(base, "strong") },
+			detail = { ui.span("press x again to " .. gone, "error strong") },
+			value = { ui.span("x", "error strong") },
+			icon = "trash",
+			tone = "error",
+			title = "Press x again to " .. gone .. ", or escape to leave it alone",
+			hint = { "x" },
+		}
+	end
 	return {
 		label = { ui.span(base, if open then "strong" else "") },
 		detail = if #detail > 0 then detail else nil,
@@ -131,6 +144,9 @@ local function file_item(state: model.State, f: parse.FileEntry, row_id: string,
 		icon = "file",
 		tone = STATUS_TONE[f.code] or "muted",
 		title = f.path .. " · " .. title,
+		-- The selected row advertises the key, which is as close to a per-row
+		-- button as a list item gets: it has one icon slot and takes no children.
+		hint = if state.sel == row_id and kind ~= "commit" then { "x" } else nil,
 	}
 end
 
@@ -170,9 +186,10 @@ local function file_nodes(
 		local list_id = parent .. "." .. key
 		-- `ui.list` takes only label/detail/value/icon/tone; the tooltip goes on the built item.
 		local titles: { string? } = {}
+		local hints: { { string }? } = {}
 		for i, it in items do
-			titles[i] = it.title
-			it.title = nil
+			titles[i], hints[i] = it.title, it.hint
+			it.title, it.hint = nil, nil
 		end
 		local listing = ui.list(items)
 		local children: { Node } = listing.c or {}
@@ -182,7 +199,12 @@ local function file_nodes(
 			local row_id = item_rows[i]
 			local item_id = list_id .. ".f" .. idx
 			ids[item_id] = row_id
-			with(child, { key = "f" .. idx, actions = { click = "file=" .. row_id, dblclick = "diff=" .. row_id }, title = titles[i] })
+			with(child, {
+				key = "f" .. idx,
+				actions = { click = "file=" .. row_id, dblclick = "diff=" .. row_id },
+				title = titles[i],
+				hint = hints[i],
+			})
 			if row_id == state.sel then
 				selected = item_id
 			end
@@ -195,7 +217,7 @@ local function file_nodes(
 	for idx, f in group.files do
 		local row_id = model.file_row_id(kind, f.path, sha)
 		local d = state.diffs[row_id]
-		table.insert(items, file_item(state, f, row_id, d ~= nil, lay))
+		table.insert(items, file_item(state, f, row_id, d ~= nil, lay, kind))
 		table.insert(item_rows, row_id)
 		if d and not lay.wide then
 			flush(idx)
@@ -407,6 +429,20 @@ local function commits(state: model.State, snap: any, ids: { [string]: string },
 	return with(ui.section(head, out), { key = "commits", collapsible = true })
 end
 
+-- Discarding takes two presses, and the chip says which one you are on.
+local function discard_chip(state: model.State, row: model.Row): Node
+	if not model.discardable(row) then
+		return with(ui.text({}), { key = "discard", hidden = true })
+	end
+	local armed = state.armed == row.id
+	return with(ui.badge(if armed then "confirm discard" else "discard", if armed then "error" else "neutral"), {
+		key = "discard",
+		shrink = 0,
+		actions = { click = "discard=" .. row.id },
+		title = if armed then "Click again to throw these changes away" else "Throw away this file's uncommitted changes (x)",
+	})
+end
+
 -- The hero column of the wide layout: the selected file's diff, full height.
 local function hero(state: model.State): Node
 	local children: { Node } = {}
@@ -431,6 +467,7 @@ local function hero(state: model.State): Node
 				actions = { click = "diff=" .. (row :: model.Row).id },
 				title = "Open this diff in a File diff block (o)",
 			}),
+			discard_chip(state, row :: model.Row),
 		}), { key = "head" }))
 		local d = state.diffs[(row :: model.Row).id]
 		if d then
@@ -445,6 +482,7 @@ end
 local ALL_HINTS = {
 	{ "enter", "diff" },
 	{ "o", "open" },
+	{ "x", "discard" },
 	{ "e", "edit" },
 	{ "r", "refresh" },
 	{ "b", "base" },
