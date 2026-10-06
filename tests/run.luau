@@ -245,7 +245,7 @@ test("view marks the selected row and keeps item ids stable", function()
 	end)
 	assert(unc, "the Changes group")
 	local row = rows_in(unc)[1]
-	assert(string.find(row.p.class, "sel", 1, true), "the selected row is marked")
+	assert(string.find(row.p.class, "on", 1, true), "the selected row is marked")
 	eq(row.p.actions.click, "file=staged:new.lua")
 	eq(row.p.actions.dblclick, "diff=staged:new.lua")
 	local commits = find(main, function(n)
@@ -303,7 +303,7 @@ test("view uses native chrome: chips, toned file rows, no TUI glyphs", function(
 	eq(labels.ahead, "↑3", "ahead/behind use compact git shorthand")
 	eq(labels.dirty, "3 changed")
 	local row = rows_in(v.main)[1]
-	eq(part_of(row, "sf-item-label").p.text, "new.lua", "file name is the label")
+	eq(part_of(row, "bc-name").p.text, "new.lua", "file name is the label")
 	eq(row.p.tone, "warning", "modified rows are toned warning")
 	eq(row.p.title, "new.lua · modified")
 	local untracked = rows_in(find(v.main, function(n)
@@ -927,7 +927,7 @@ test("x arms a row and says what it will do; a second x discards", function()
 	local row = rows_in(row_of(def.view(state, cx).main, "unstaged"))[1]
 	eq(row.p.tone, "error")
 	assert(string.find(part_of(row, "bc-revert").p.class, "on", 1, true), "the control stays shown while armed")
-	eq(part_of(row, "sf-item-detail").p.text, "again to discard", "the row says what happens next")
+	eq(part_of(row, "bc-dir").p.text, "again to discard", "the row says what happens next")
 	key(def, state, cx, "x")
 	eq(state.armed, nil)
 	eq(S.ran[ran + 1], PREFIX .. "restore -- lib/util.lua", "it discards the worktree copy")
@@ -1012,6 +1012,22 @@ test("the full view's discard chip takes two clicks too", function()
 	eq(S.ran[ran + 1], PREFIX .. "restore --staged --worktree -- new.lua")
 end)
 
+test("rows use this plugin's own classes, not Tern's", function()
+	local def, cx, state = start()
+	for _, row in rows_in(def.view(state, cx).main) do
+		local function walk(n: any)
+			local class = (n.p or {}).class
+			if type(class) == "string" then
+				assert(not string.find(class, "sf-", 1, true), "a plugin element cannot borrow " .. class)
+			end
+			for _, child in n.c or {} do
+				walk(child)
+			end
+		end
+		walk(row)
+	end
+end)
+
 test("every change row carries a real revert icon, and no commit file does", function()
 	local def, cx, state = start()
 	local row = rows_in(row_of(def.view(state, cx).main, "unstaged"))[1]
@@ -1023,7 +1039,7 @@ test("every change row carries a real revert icon, and no commit file does", fun
 		return n.k == "icon"
 	end)
 	eq(icon.p.name, "revert", "a native icon node")
-	eq(find(part_of(row, "sf-item-ic"), function(n)
+	eq(find(part_of(row, "bc-ic"), function(n)
 		return n.k == "icon"
 	end).p.name, "file", "the status icon keeps the left slot")
 	-- A file inside a commit is history, so it gets no revert control.
@@ -1157,7 +1173,7 @@ test("a wide pane puts the file list beside the selected diff", function()
 	assert(list and hero, "list and hero columns")
 	local sha = state.snap.commits[1].sha
 	eq(wide_ids["main.split.list.commits.l1.c" .. sha], "c:" .. sha, "commit ids follow the deeper layout")
-	assert(string.find(rows_in(list)[1].p.class, "sel", 1, true), "and the selected file row is still marked")
+	assert(string.find(rows_in(list)[1].p.class, "on", 1, true), "and the selected file row is still marked")
 	eq(hero.p.role, "branch-changes.hero")
 	local d = find(hero, function(n)
 		return n.k == "diff"
@@ -1192,7 +1208,7 @@ test("files an agent just touched surface first with a live cue", function()
 	local age = model.fresh_age(state, "unstaged:lib/util.lua")
 	assert(age ~= nil and age < 5, "the edited file is fresh")
 	local row = rows_in(row_of(def.view(state, cx).main, "unstaged"))[1]
-	assert(string.find(part_of(row, "sf-item-detail").p.text, "just now", 1, true), "the row says when it changed")
+	assert(string.find(part_of(row, "bc-dir").p.text, "just now", 1, true), "the row says when it changed")
 	state.fresh["unstaged:lib/util.lua"] = os.time() - model.FRESH_SECONDS - 60
 	eq(model.fresh_age(state, "unstaged:lib/util.lua"), nil, "and the cue fades")
 end)

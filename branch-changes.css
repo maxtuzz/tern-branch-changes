@@ -21,32 +21,73 @@
 }
 
 /* File rows are elements, not list items, so they can hold a real `revert`
-   icon with its own click. They wear Tern's own `sf-item` classes for metrics,
-   selection and tone; these rules add what a row outside an `sf-list` does not
-   inherit, and the parts a list row has no slot for. */
+   icon with its own click. A plugin's element cannot borrow Tern's own `sf-`
+   class names, so the row is styled here, copying the metrics of Tern's list
+   rows (`.sf-item` and friends) so it sits in the same rhythm. */
 [data-surface^='plugin.branch-changes.'] .bc-row {
-	cursor: default;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	min-height: calc(var(--sf-lh) + 6px);
+	padding: 0 8px 0 10px;
+	white-space: pre;
+	color: var(--t1);
 	border-radius: 4px;
+	cursor: default;
 }
 
 [data-surface^='plugin.branch-changes.'] .bc-row:hover {
 	background-color: var(--l1);
 }
 
-[data-surface^='plugin.branch-changes.'] .bc-row .sf-item-detail {
-	margin-left: 6px;
+[data-surface^='plugin.branch-changes.'] .bc-row.on {
+	background-color: light-dark(rgb(from var(--accent) r g b/10%), rgb(from var(--accent) r g b/16%));
+	box-shadow: inset 2px 0 0 var(--accent);
 }
 
-[data-surface^='plugin.branch-changes.'] .bc-row .bc-open {
-	color: var(--t1);
+[data-surface^='plugin.branch-changes.'] .bc-ic {
+	display: grid;
+	place-items: center;
+	width: 16px;
+	height: 16px;
+	color: var(--tc, var(--t3));
+	flex: 0 0 auto;
+}
+
+[data-surface^='plugin.branch-changes.'] .bc-ic .ico {
+	width: 14px;
+	height: 14px;
+}
+
+[data-surface^='plugin.branch-changes.'] .bc-name {
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+[data-surface^='plugin.branch-changes.'] .bc-open {
 	font-weight: 600;
+}
+
+[data-surface^='plugin.branch-changes.'] .bc-dir {
+	flex: 1 1 0;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: var(--t3);
 }
 
 [data-surface^='plugin.branch-changes.'] .bc-counts {
 	display: inline-flex;
 	align-items: center;
 	gap: 4px;
-	margin-left: 6px;
+	flex: 0 0 auto;
+	max-width: 40%;
+	overflow: hidden;
+	color: var(--t3);
+	font-variant-numeric: tabular-nums;
 }
 
 [data-surface^='plugin.branch-changes.'] .bc-ins {
@@ -62,7 +103,7 @@
 }
 
 [data-surface^='plugin.branch-changes.'] .bc-code {
-	color: var(--tc);
+	color: var(--tc, var(--t3));
 	font-weight: 600;
 }
 
@@ -73,14 +114,14 @@
 	place-items: center;
 	width: 18px;
 	height: 18px;
-	margin-left: 6px;
+	flex: 0 0 auto;
 	color: var(--sf-c-error);
 	cursor: pointer;
 	opacity: 0;
 }
 
 [data-surface^='plugin.branch-changes.'] .bc-row:hover .bc-revert,
-[data-surface^='plugin.branch-changes.'] .bc-row.sel .bc-revert,
+[data-surface^='plugin.branch-changes.'] .bc-row.on .bc-revert,
 [data-surface^='plugin.branch-changes.'] .bc-revert.on {
 	opacity: 1;
 }
