@@ -144,7 +144,7 @@ The tests run the real `host.luau` against a stub `tern` (`tests/stub.luau`) and
 ## Tern API limitations worked around
 
 - **Width.** A block learns its size only in cells, from `cx.cols`, so the layout switches at cell thresholds (sidebar under 56, two columns at 100) rather than at pixel widths.
-- **No wrap control.** A `text` node has no "don't wrap" prop, so rows that must stay on one line are clipped with `max = { h = "1lines" }` and the footer only adds hints that fit the pane's width. A chip row narrower than its chips is cut off rather than wrapped.
+- **No wrap control.** A `text` node has no "don't wrap" prop. A `row` itself doesn't wrap, but its children shrink, and a squeezed text node breaks its own words, so chips and keycaps carry `shrink = 0` and the view spends width by dropping whole items. Long single-line text (the branch name, the worktree path) is clipped with `max = { h = "1lines" }`, which cuts rather than ellipsizes — and it can only go on text, since clipping a row to one line would slice the top and bottom off any badge inside it.
 - **No hover state.** Plugins see clicks, not hovers, so anything "on hover" is a `title` tooltip instead; that is where the long forms of the chips and rows live.
 - **No menus for a plugin's own nodes.** `actions` carries `click` and `dblclick`, so the base picker is one chip that cycles rather than a dropdown.
 - **Card heads take spans only**, which is one reason commits are list rows now: a row gives real truncation and a right-aligned value, which a card head does not.

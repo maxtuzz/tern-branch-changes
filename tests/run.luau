@@ -642,9 +642,13 @@ test("a sidebar-width pane keeps header rows on one line and trims labels", func
 	local def, cx, state = start()
 	local v = def.view(state, cx)  -- cx.cols is 80 in the stub
 	local narrow = view.build(state, 38)
-	local head = row_of(narrow.main, "head")
-	eq(head.p.max.h, "1lines", "the branch row is clipped to one line")
-	eq(row_of(narrow.main, "chips").p.max.h, "1lines", "the chip row cannot wrap")
+	eq(row_of(narrow.main, "branch").p.max.h, "1lines", "a long branch name is clipped to one line")
+	local chip_row = row_of(narrow.main, "chips")
+	eq(chip_row.p.max, nil, "the chip row is never clipped: that would cut the pills' edges")
+	for _, chip in chip_row.c do
+		eq(chip.p.shrink, 0, "a chip keeps its content width instead of wrapping its text")
+	end
+	eq(row_of(narrow.main, "head").p.max, nil, "nor is the row holding the base chip")
 	local base = row_of(narrow.main, "base")
 	eq(base.k, "badge")
 	eq(base.p.text, "main", "the base chip drops the remote at sidebar width")
@@ -683,11 +687,13 @@ test("footer hints are dropped to fit, never wrapped", function()
 		used += (utf8.len(t) or 0) + 2
 	end
 	assert(used <= cols, "narrow hints fit " .. cols .. " cells, used " .. used)
-	local dock = view.build(state, 30).dock
-	eq(find(dock, function(n)
-		return n.p and n.p.max and n.p.max.h == "1lines"
-	end) ~= nil, true, "the footer row is clipped to one line")
-	assert(longest_line(dock) < 30, "no single footer label exceeds the pane")
+	local strip = view.build(state, 30).dock.c[1]
+	eq(strip.k, "row")
+	eq(strip.p.max, nil, "the footer is not clipped either: keycaps are taller than a line")
+	for _, child in strip.c do
+		eq(child.p.shrink, 0, "every hint keeps its width, so no label breaks mid-word")
+	end
+	assert(longest_line(view.build(state, 30).dock) < 30, "no single footer label exceeds the pane")
 end)
 
 test("a wide pane puts the file list beside the selected diff", function()

@@ -68,10 +68,20 @@ local function with(node: Node, props: { [string]: any }): Node
 	return node
 end
 
--- Keeps a node to a single line. `max.h` clips (overflow: hidden), which is how
--- a row of chips or hints is stopped from wrapping onto a second line.
+-- Clips a *text* node to its first line. `max.h` clips with overflow: hidden,
+-- so it keeps a long branch name or path on one row. It must not go on a row
+-- holding badges: a pill is taller than a line of text, and the clip would cut
+-- its top and bottom edges off.
 local function one_line(node: Node): Node
 	return with(node, { max = { h = "1lines" } })
+end
+
+-- Keeps a node at its content width. A `row` does not wrap, but its children
+-- shrink, and a squeezed text node wraps its own words ("refres/h"). Chips and
+-- keycaps therefore refuse to shrink, and the view spends width by dropping
+-- whole items rather than by letting any of them be squeezed.
+local function fixed(node: Node): Node
+	return with(node, { shrink = 0 })
 end
 
 -- Right-hand value: "+n -n" then the status letter in its tone, as Source
@@ -203,7 +213,7 @@ local function file_nodes(
 end
 
 local function badge(text: string, tone: string, key: string, title: string?): Node
-	return with(ui.badge(text, tone), { key = key, title = title })
+	return fixed(with(ui.badge(text, tone), { key = key, title = title }))
 end
 
 -- Branch line, one clipped row of status chips, and the base as a single chip
@@ -219,7 +229,7 @@ local function header(state: model.State, lay: Layout): { Node }
 	local branch = st.head or ("detached at " .. string.sub(st.oid or "", 1, 8))
 
 	local title: { Node } = {
-		with(ui.text({ ui.span(branch, "strong") }), { key = "branch", grow = 1, shrink = 1, title = root }),
+		one_line(with(ui.text({ ui.span(branch, "strong") }), { key = "branch", grow = 1, shrink = 1, title = root })),
 	}
 	if snap.base then
 		local label = if lay.compact then (string.gsub(snap.base, "^origin/", "")) else snap.base
@@ -231,7 +241,7 @@ local function header(state: model.State, lay: Layout): { Node }
 			title = if more then "Compared to " .. snap.base .. " · click or press b for the next base" else "Compared to " .. snap.base,
 		}))
 	end
-	local nodes: { Node } = { one_line(with(ui.row(title), { key = "head" })) }
+	local nodes: { Node } = { with(ui.row(title), { key = "head" }) }
 
 	local chips: { Node } = {}
 	local unpushed = if snap.unpushed_known then st.ahead else snap.commits_total
@@ -256,7 +266,7 @@ local function header(state: model.State, lay: Layout): { Node }
 		end
 		table.insert(chips, badge(text, "neutral", "total", string.format("%d file(s), +%d -%d since %s", t.files, t.add, t.del, snap.base or "the merge base")))
 	end
-	table.insert(nodes, one_line(with(ui.row(chips), { key = "chips" })))
+	table.insert(nodes, with(ui.row(chips), { key = "chips" }))
 
 	if lay.wide then
 		table.insert(nodes, one_line(with(ui.text({ ui.span(root, "path muted") }), { key = "meta" })))
@@ -409,15 +419,15 @@ local function hero(state: model.State): Node
 		if target.sha then
 			table.insert(head, ui.span("  at " .. string.sub(target.sha, 1, 7), "muted"))
 		end
-		table.insert(children, one_line(with(ui.row({
-			with(ui.text(head), { key = "t", grow = 1, shrink = 1 }),
+		table.insert(children, with(ui.row({
+			one_line(with(ui.text(head), { key = "t", grow = 1, shrink = 1 })),
 			with(ui.badge("open in its own pane", "neutral"), {
 				key = "pop",
 				shrink = 0,
 				actions = { click = "diff=" .. (row :: model.Row).id },
 				title = "Open this diff in a File diff block (o)",
 			}),
-		}), { key = "head" })))
+		}), { key = "head" }))
 		local d = state.diffs[(row :: model.Row).id]
 		if d then
 			table.insert(children, with(diff_node(d, target.path), { key = "diff", role = "branch-changes.diff" }))
@@ -443,12 +453,12 @@ local function dock(state: model.State, lay: Layout): Node
 	local children: { Node } = {}
 	local used = 0
 	if state.loading then
-		table.insert(children, ui.node("spinner", { style = "dots", label = { ui.span("Refreshing", "muted") } }))
+		table.insert(children, fixed(ui.node("spinner", { style = "dots", label = { ui.span("Refreshing", "muted") } })))
 		used += 12
 	elseif state.refreshed_at then
 		-- A live timer, so a sidebar left open shows how stale its picture is.
-		table.insert(children, ui.node("elapsed", { age = (os.time() - state.refreshed_at) * 1000, format = "short" }))
-		table.insert(children, ui.text({ ui.span("ago", "muted") }))
+		table.insert(children, fixed(ui.node("elapsed", { age = (os.time() - state.refreshed_at) * 1000, format = "short" })))
+		table.insert(children, fixed(ui.text({ ui.span("ago", "muted") })))
 		used += 10
 	end
 	for _, h in ALL_HINTS do
@@ -457,10 +467,10 @@ local function dock(state: model.State, lay: Layout): Node
 			break
 		end
 		used += cost
-		table.insert(children, ui.node("kbd", { keys = { h[1] } }))
-		table.insert(children, ui.text({ ui.span(h[2], "dim") }))
+		table.insert(children, fixed(ui.node("kbd", { keys = { h[1] } })))
+		table.insert(children, fixed(ui.text({ ui.span(h[2], "dim") })))
 	end
-	return ui.col({ one_line(ui.row(children)) })
+	return ui.col({ ui.row(children) })
 end
 
 -- The view, and a map from list item node ids to row ids for `select` events.
