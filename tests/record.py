@@ -120,6 +120,8 @@ def main():
         commits = git(repo, "rev-list", rng).split()
         cmds = [
             ["rev-parse", "--show-toplevel"],
+            ["config", "--get", "user.name"],
+            ["config", "--get", "core.fsmonitor"],
             ["rev-parse", "-q", "--verify", "HEAD"],
             ["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal"],
             ["diff", "--numstat", "-z", "--"],

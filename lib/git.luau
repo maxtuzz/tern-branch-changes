@@ -79,9 +79,21 @@ function M.status_args(cfg: config.Config): { string }
 	return { "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=" .. cfg.untracked }
 end
 
-function M.status(root: string, cfg: config.Config, cb: (string?) -> ())
+-- Reports how long the call took as well: the poll paces itself by it, so a
+-- worktree where status is expensive is asked less often.
+function M.status(root: string, cfg: config.Config, cb: (string?, number) -> ())
+	local started = tern.now()
 	M.run(root, M.status_args(cfg), M.SLOW_MS, function(r)
-		cb(if r.status == 0 then r.stdout else nil)
+		cb(if r.status == 0 then r.stdout else nil, tern.now() - started)
+	end)
+end
+
+-- Whether this worktree has git's filesystem monitor on, which is what keeps
+-- `git status` cheap in a big repo.
+function M.fsmonitor(root: string, cb: (boolean) -> ())
+	M.run(root, { "config", "--get", "core.fsmonitor" }, M.FAST_MS, function(r)
+		local value = string.match(r.stdout, "^%s*(.-)%s*$") or ""
+		cb(r.status == 0 and value ~= "" and value ~= "false")
 	end)
 end
 

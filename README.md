@@ -82,9 +82,12 @@ A host block can't create blocks itself, so the list follows a `tern-branch-chan
 The block refreshes on its own:
 
 - **A working-tree poll.** Every `poll_ms` (2 s by default) it runs one `git status` and refreshes only when the output differs from the last. This is what catches edits an editor or an agent writes directly, which finish no shell command and leave HEAD alone. The status output is handed to the refresh, so a cycle runs `git status` once, not twice.
+- **Paced by what it costs.** Each probe is timed, and the poll keeps itself to roughly a twentieth of one core: where `git status` takes 10 ms it runs at the configured 2 s, and where it takes 800 ms it runs every 16 s instead, capped at a minute. Nothing to tune by repo size, and it tightens up by itself once status gets cheap.
 - **Backoff.** After six quiet rounds the poll drops to 15 s, so a block left open all day is nearly free. A command starting under the worktree (`command_started`) wakes it back to the quick pace at once — an agent about to write files is exactly when you want it watching.
 - **Shell commands.** 500 ms after a command finishes under the worktree (`command_finished`, debounced).
 - **`r`.**
+
+When status is slow and the worktree has no fsmonitor, the block says so once, quietly, under the header. Turning it on is your call — the plugin never writes to your repo's config.
 
 Tern has no filesystem-change event (`tern.on` takes `spawn`, `command_started`, `command_finished`, `cwd`, `title` and `pane_exited`), and `tern.process.run` only reports a process when it exits, so a plugin can't stream a watcher like `fswatch`. Polling `git status` is the available answer. **In a large monorepo, turn on git's fsmonitor** — `git config core.fsmonitor true` (or watchman) — which makes each poll a question to a daemon instead of a walk of the worktree, so a 2 s poll stays cheap. Otherwise raise `poll_ms`.
 

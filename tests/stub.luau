@@ -17,6 +17,7 @@ S.handlers = {} :: { [string]: { (...any) -> ...any } }
 S.kv = {} :: { [string]: any }
 S.files = {} :: { [string]: boolean }
 S.ran = {} :: { string }
+S.process_ms = 0 -- simulated duration of each process, for the poll's pacing
 S.effects = {} :: { { string } }
 
 local function node(k: string, p: { [string]: any }?, c: { any }?)
@@ -149,6 +150,7 @@ local tern = {
 				error("no fixture for: " .. key .. " (run python3 tests/record.py?)")
 			end
 			queue(function()
+				S.clock += S.process_ms
 				cb({ status = r.status, stdout = r.stdout, stderr = r.stderr, timed_out = false })
 			end)
 		end,

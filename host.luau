@@ -19,6 +19,13 @@ local DEBOUNCE_MS = 500
 -- few quiet rounds backs off to IDLE_MS, so a block left open all day is cheap.
 local IDLE_MS = 15000
 local QUIET_ROUNDS = 6
+-- The poll keeps itself to about a twentieth of one core: in a worktree where
+-- `git status` takes 800 ms it runs every 16 s, not every 2 s. Measured, so it
+-- needs no guess about repo size, and it tightens up by itself once the repo
+-- gets git's filesystem monitor.
+local DUTY = 20
+local MAX_POLL_MS = 60000
+local SLOW_MS = 400
 local KV_PANES = "panes" -- pane id -> worktree root, read by window.luau to focus an open block
 
 type Block = {
@@ -28,6 +35,7 @@ type Block = {
 	busy: boolean,
 	again: boolean, -- a refresh was asked for while one ran
 	debounce: TimerHandle?,
+	fsmonitor: boolean, -- whether this worktree has git's filesystem monitor on
 	seen: string?, -- the last status output, so the poll can tell what changed
 	quiet: number, -- consecutive polls that found nothing, for the backoff
 	tick: TimerHandle?, -- the pending poll, so waking it can re-arm at the quick pace
@@ -184,6 +192,16 @@ end
 -- its output differs from the last. `command_finished` and `r` still refresh
 -- directly; this is what catches edits made by an editor or an agent, which
 -- finish no shell command and leave HEAD alone.
+-- Said once, quietly, and only where it would actually help: a worktree this
+-- big is what git's filesystem monitor is for.
+local function hint_for(b: Block): string?
+	local cost = b.state.cost
+	if b.fsmonitor or cost == nil or cost < SLOW_MS then
+		return nil
+	end
+	return string.format("git status takes %.1fs here — `git config core.fsmonitor true` makes this quick", cost / 1000)
+end
+
 local poll: (b: Block) -> ()
 
 -- Back to the quick pace now, not at the end of a 15 s nap: a command just
@@ -197,9 +215,19 @@ local function wake(b: Block)
 	poll(b)
 end
 
+-- What a tick should cost us: the configured pace, stretched when status is
+-- slow here, stretched again while nothing is happening.
+local function pace(b: Block): number
+	local floor = b.state.cfg.poll_ms
+	local wait = math.max(floor, (b.state.cost or 0) * DUTY)
+	if b.quiet >= QUIET_ROUNDS then
+		wait = math.max(wait, IDLE_MS)
+	end
+	return math.min(wait, MAX_POLL_MS)
+end
+
 poll = function(b: Block)
-	local wait = if b.quiet >= QUIET_ROUNDS then IDLE_MS else b.state.cfg.poll_ms
-	b.tick = tern.timer(wait, function()
+	b.tick = tern.timer(pace(b), function()
 		b.tick = nil
 		if not reap(b.cx.pane) or blocks[b.cx.pane] ~= b then
 			return
@@ -209,10 +237,14 @@ poll = function(b: Block)
 			poll(b)
 			return
 		end
-		git.status(root, b.state.cfg, function(out)
+		git.status(root, b.state.cfg, function(out, took)
 			if not alive(b.cx.pane) or blocks[b.cx.pane] ~= b then
 				return
 			end
+			-- A rolling cost, so one slow tick doesn't set the pace on its own.
+			local cost = b.state.cost
+			b.state.cost = if cost then cost * 0.7 + took * 0.3 else took
+			b.state.hint = hint_for(b)
 			if out ~= nil and out ~= b.seen then
 				b.seen, b.quiet = out, 0
 				refresh(b, out)
@@ -326,6 +358,7 @@ local def: BlockDef<model.State> = {
 			busy = false,
 			again = false,
 			debounce = nil,
+			fsmonitor = false,
 			seen = nil,
 			quiet = 0,
 			tick = nil,
@@ -354,6 +387,11 @@ local def: BlockDef<model.State> = {
 				if alive(cx.pane) and r.status == 0 then
 					state.me = (string.gsub(r.stdout, "%s+$", ""))
 					cx:render()
+				end
+			end)
+			git.fsmonitor(root, function(on)
+				if alive(cx.pane) then
+					b.fsmonitor = on
 				end
 			end)
 			refresh(b)

@@ -25,6 +25,8 @@ export type State = {
 	diffs: { [string]: DiffState }, -- open diffs, by row id
 	sel: string?, -- selected row id
 	me: string?, -- this repo's user.name, so commits by others stand out
+	cost: number?, -- how long `git status` takes here, in ms
+	hint: string?, -- a standing suggestion, such as turning fsmonitor on
 	sigs: { [string]: string }, -- uncommitted row id -> its last seen status/counts
 	fresh: { [string]: number }, -- uncommitted row id -> os.time() it last changed
 }
@@ -52,6 +54,8 @@ function M.new(dir: string, root: string?, base_pref: string?): State
 		diffs = {},
 		sel = nil,
 		me = nil,
+		cost = nil,
+		hint = nil,
 		sigs = {},
 		fresh = {},
 	}

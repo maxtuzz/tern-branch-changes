@@ -489,6 +489,9 @@ function M.build(state: model.State, cols: number?): (BlockView, { [string]: str
 	for i, w in state.warnings do
 		table.insert(main, with(ui.text({ ui.span(w, "warning") }), { key = "w" .. i }))
 	end
+	if state.hint and not lay.compact then
+		table.insert(main, one_line(with(ui.text({ ui.span(state.hint, "muted") }), { key = "hint" })))
+	end
 	local snap = state.snap
 	if state.error then
 		table.insert(main, with(ui.text({ ui.span(state.error, "error") }), { key = "error" }))

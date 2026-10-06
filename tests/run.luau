@@ -456,6 +456,27 @@ test("a refresh from the poll does not run git status twice", function()
 	local _ = state
 end)
 
+test("the poll paces itself by what git status costs in this worktree", function()
+	local _, _, state = start()
+	-- A monorepo where status takes 800 ms: polling every 2 s would eat a core.
+	S.process_ms = 800
+	S.advance(2000)
+	assert(state.cost ~= nil and state.cost > 400, "the probe is timed")
+	local calls = #S.ran
+	S.advance(2000)
+	eq(#S.ran, calls, "it does not keep polling at the quick pace")
+	S.advance(16000)
+	assert(#S.ran > calls, "it polls at about a twentieth of the cost instead")
+	assert(state.hint and string.find(state.hint, "fsmonitor", 1, true), "with a word about fsmonitor")
+	S.process_ms = 0
+end)
+
+test("no fsmonitor hint when status is quick", function()
+	local _, _, state = start()
+	S.advance(2000)
+	eq(state.hint, nil, "a fast worktree is told nothing")
+end)
+
 test("the poll backs off while the worktree is quiet, and a command wakes it", function()
 	local _, _, state = start()
 	for _ = 1, 6 do
