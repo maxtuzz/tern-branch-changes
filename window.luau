@@ -195,6 +195,22 @@ tern.route.link(function(req, cx)
 		end
 		return { handled = true }
 	end
+	-- `e` or the edit chip in a diff block: put the file in that pane's place,
+	-- at the line the diff starts on. `cx.docs` is desktop-only, so a plain open
+	-- stands in for it elsewhere.
+	local path, line = link.decode_edit(req.url)
+	if path then
+		if req.pane then
+			cx.layout:focus(req.pane)
+		end
+		local ok = pcall(function()
+			cx.docs:open(path, { how = "replace", line = line })
+		end)
+		if not ok then
+			cx:open(path, "replace")
+		end
+		return { handled = true }
+	end
 	-- The ↺ in a file row. Spans can only carry links, so the window hands the
 	-- action back to the block's own `event` with the row it named.
 	local row = link.decode_discard(req.url)

@@ -633,6 +633,108 @@ test("diff block loads the patch full-pane and reloads on r", function()
 	eq(#S.ran, before + 1, "reloaded")
 end)
 
+test("e in a diff block swaps the pane for the file at the first change", function()
+	start()
+	local def = S.blocks.diff
+	table.insert(S.panes, { pane = 13, cwd = F.root, program = "branch-changes.diff", title = "", busy = false })
+	local cx = S.cx(13, F.root)
+	local state = def.init(cx, link.to_args({ root = F.root, kind = "staged", path = "new.lua" }), nil)
+	S.drain()
+	S.files[F.root .. "/new.lua"] = true
+	def.key(state, { name = "e", ctrl = false, alt = false, shift = false, meta = false }, cx)
+	local opened = S.effects[#S.effects]
+	eq(opened[1], "open")
+	local path, line = link.decode_edit(opened[2])
+	eq(path, F.root .. "/new.lua")
+	eq(line, 1, "the caret goes to the first changed line")
+	-- The chip does the same thing.
+	S.effects = {}
+	def.event(state, { ev = "action", act = "edit" }, cx)
+	eq(link.decode_edit(S.effects[#S.effects][2]), F.root .. "/new.lua")
+	local chip = find(def.view(state, cx).main, function(n)
+		return n.p and n.p.key == "edit"
+	end)
+	eq(chip.p.actions.click, "edit")
+end)
+
+test("a commit's version is read-only, and a deleted file says so", function()
+	start()
+	local def = S.blocks.diff
+	table.insert(S.panes, { pane = 14, cwd = F.root, program = "branch-changes.diff", title = "", busy = false })
+	local cx = S.cx(14, F.root)
+	local sha = "38aa7362a0b9e7d1c2a43b85d9378d913661c160"
+	local state = def.init(cx, link.to_args({ root = F.root, kind = "commit", path = "new.lua", sha = sha }), nil)
+	S.drain()
+	def.key(state, { name = "e", ctrl = false, alt = false, shift = false, meta = false }, cx)
+	eq(S.effects[#S.effects][1], "toast", "a commit's copy cannot be edited in place")
+	eq(find(def.view(state, cx).main, function(n)
+		return n.p and n.p.key == "edit"
+	end), nil, "and it offers no edit chip")
+	-- A tracked file that is gone from the worktree.
+	S.files = {}
+	local gone = def.init(S.cx(15, F.root), link.to_args({ root = F.root, kind = "unstaged", path = "lib/util.lua" }), nil)
+	S.drain()
+	S.effects = {}
+	def.key(gone, { name = "e", ctrl = false, alt = false, shift = false, meta = false }, S.cx(15, F.root))
+	eq(S.effects[#S.effects][1], "toast")
+end)
+
+test("first_hunk_line reads the new file's starting line", function()
+	local p = require("../lib/parse")
+	eq(p.first_hunk_line("diff --git a/x b/x\n@@ -1,3 +12,4 @@ fn main()\n-a\n+b\n"), 12)
+	eq(p.first_hunk_line("@@ -0,0 +1 @@\n+hello\n"), 1, "a new file starts at line 1")
+	eq(p.first_hunk_line("diff --git a/x b/x\nBinary files differ\n"), nil)
+end)
+
+test("the window route opens the file in place of the diff pane", function()
+	S.routes = {}
+	__reload("window")
+	local route = S.routes[1]
+	local opened: any = nil
+	local focused: number? = nil
+	local wcx = {
+		session = {
+			panes = function(_self)
+				return {}
+			end,
+			event = function() end,
+			tab_of = function()
+				return nil
+			end,
+			layout = function()
+				return nil
+			end,
+			pane = function()
+				return nil
+			end,
+		},
+		layout = {
+			focus = function(_self, pane)
+				focused = pane
+			end,
+			new_tab = function()
+				return 1
+			end,
+			split = function()
+				return 1
+			end,
+		},
+		docs = {
+			open = function(_self, path, opts)
+				opened = { path = path, opts = opts }
+				return 21
+			end,
+		},
+		command = function() end,
+	}
+	local decision = route({ url = link.edit_url("/w/repo/x.lua", 12), pane = 9, mods = {} }, wcx)
+	eq(decision.handled, true)
+	eq(focused, 9, "the diff pane is the one replaced")
+	eq(opened.path, "/w/repo/x.lua")
+	eq(opened.opts.how, "replace")
+	eq(opened.opts.line, 12)
+end)
+
 test("diff block with bad args shows an error instead of failing", function()
 	start()
 	local state = S.blocks.diff.init(S.cx(12, nil), { "/r", "commit", "a.txt" }, nil)

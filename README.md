@@ -77,7 +77,9 @@ In the full view a click loads the diff into the hero instead of folding it away
 
 ### File diff block
 
-`branch-changes.diff` shows one file's patch full-pane with Tern's own `ui.diff` renderer. Its args are `{ root, kind, path, sha?, orig? }`, where kind is staged, unstaged, untracked or commit. Press `r` to reload; `e` edits the file when it still exists. Working-tree diffs reload on their own when a shell command finishes under the root.
+`branch-changes.diff` shows one file's patch full-pane with Tern's own `ui.diff` renderer. Its args are `{ root, kind, path, sha?, orig? }`, where kind is staged, unstaged, untracked or commit. Press `r` to reload.
+
+**Reading a diff usually ends in changing the file**, so `e` — or the **edit** chip beside the heading — puts the file in that same pane, with the caret on the first changed line (`cx.docs:open(path, { how = "replace", line })`, falling back to a plain open where `cx.docs` isn't available). A commit's version and a file deleted from the worktree say so instead. Working-tree diffs reload on their own when a shell command finishes under the root.
 
 A host block can't create blocks itself, so the list follows a `tern-branch-changes://diff?root=…&kind=…&path=…&sha=…` link with `cx:open`. `window.luau`'s `tern.route.link` focuses the open block for the same root, kind, SHA and path, or places a new one. It places it itself rather than letting the route do it: a route's `block` decision opens beside the pane the link came from, which halves the sidebar and leaves the diff too narrow to read. Instead it walks the tab's split tree, splits the roomiest pane that isn't one of this plugin's blocks, and falls back to a new tab.
 

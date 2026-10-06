@@ -10,6 +10,7 @@ M.SCHEME = "tern-branch-changes"
 M.PREFIX = M.SCHEME .. "://diff?"
 M.VIEW_PREFIX = M.SCHEME .. "://view?"
 M.DISCARD_PREFIX = M.SCHEME .. "://discard?"
+M.EDIT_PREFIX = M.SCHEME .. "://edit?"
 
 export type DiffLink = {
 	root: string,
@@ -136,6 +137,29 @@ function M.decode_discard(url: string): string?
 	end
 	local id = decode(row)
 	return if id ~= "" then id else nil
+end
+
+-- `tern-branch-changes://edit?path=…&line=…`: open the file for editing in
+-- place of the pane the link came from, with the caret at `line`.
+function M.edit_url(path: string, line: number?): string
+	local url = M.EDIT_PREFIX .. "path=" .. encode(path)
+	return if line then url .. "&line=" .. tostring(line) else url
+end
+
+function M.decode_edit(url: string): (string?, number?)
+	if string.sub(url, 1, #M.EDIT_PREFIX) ~= M.EDIT_PREFIX then
+		return nil, nil
+	end
+	local query = string.sub(url, #M.EDIT_PREFIX + 1)
+	local path = string.match(query, "^path=([^&]+)")
+	if path == nil then
+		return nil, nil
+	end
+	local decoded = decode(path)
+	if decoded == "" then
+		return nil, nil
+	end
+	return decoded, tonumber(string.match(query, "&line=(%d+)") or "")
 end
 
 -- Identity of a diff view, for focusing an open block instead of opening another.
