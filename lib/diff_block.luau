@@ -103,7 +103,7 @@ local function edit(state: DiffState, cx: BlockCx)
 	-- For a commit the patch describes that revision, so its line numbers mean
 	-- nothing for the file as it stands now: open it at the top instead.
 	local line = if t.kind ~= "commit" and state.text then parse.first_hunk_line(state.text) else nil
-	cx:open(link.edit_url(abs, line))
+	cx:open(link.edit_url(abs, line, cx.pane))
 end
 
 local function chips(t: link.DiffLink): Node

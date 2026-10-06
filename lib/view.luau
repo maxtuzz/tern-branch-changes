@@ -93,10 +93,10 @@ end
 -- not an `actions`, and the row's own click would win over it anyway.
 local REVERT = "↺"
 
-local function value(f: parse.FileEntry, lay: Layout, row_id: string?, armed: boolean): { Span }
+local function value(f: parse.FileEntry, lay: Layout, row_id: string?, armed: boolean, pane: number?): { Span }
 	local spans: { Span } = {}
 	if row_id then
-		table.insert(spans, ui.link(REVERT, link.discard_url(row_id), if armed then "error strong" else "muted"))
+		table.insert(spans, ui.link(REVERT, link.discard_url(row_id, pane), if armed then "error strong" else "muted"))
 		table.insert(spans, ui.span(" "))
 	end
 	if f.add == nil and f.del == nil then
@@ -140,7 +140,7 @@ local function file_item(state: model.State, f: parse.FileEntry, row_id: string,
 			label = { ui.span(base, "strong") },
 			-- Neutral wording: you may have armed this with the key or the ↺.
 			detail = { ui.span("again to " .. gone, "error strong") },
-			value = value(f, lay, row_id, true),
+			value = value(f, lay, row_id, true, state.pane),
 			icon = "revert",
 			tone = "error",
 			title = "Press x or ⌘-click ↺ again to " .. gone .. " " .. f.path .. ", or escape to leave it alone",
@@ -150,7 +150,7 @@ local function file_item(state: model.State, f: parse.FileEntry, row_id: string,
 	return {
 		label = { ui.span(base, if open then "strong" else "") },
 		detail = if #detail > 0 then detail else nil,
-		value = value(f, lay, if can_discard then row_id else nil, false),
+		value = value(f, lay, if can_discard then row_id else nil, false, state.pane),
 		icon = "file",
 		tone = STATUS_TONE[f.code] or "muted",
 		title = f.path .. " · " .. title .. (if can_discard then " · ⌘-click ↺ or press x to discard" else ""),

@@ -130,6 +130,16 @@ tern.command({
 	end,
 })
 
+-- The pane a link came from. `req.pane` is empty for a link a host block opened
+-- through `cx:open`, so each link carries its block's own pane as well; it is
+-- only trusted when this window actually shows that pane.
+local function link_pane(cx: WindowCx, named: number?, from: number?): number?
+	if named and cx.session:pane(named) then
+		return named
+	end
+	return from
+end
+
 -- Opens `path` where the diff block was. `replace` goes by the focused block,
 -- so it is only used once focus is confirmed to be on that pane; otherwise the
 -- file opens normally and the diff pane is closed behind it. Either way the
@@ -212,9 +222,9 @@ end
 -- focus the diff block already showing that file, else open one where it fits.
 tern.route.link(function(req, cx)
 	-- `f` in the block: zoom this pane, or put it back when it is already zoomed.
-	local root = link.decode_view(req.url)
+	local root, view_pane = link.decode_view(req.url)
 	if root then
-		local pane = req.pane or existing(cx, root)
+		local pane = link_pane(cx, view_pane, req.pane) or existing(cx, root)
 		if pane then
 			zoom(cx, pane, true)
 		end
@@ -222,17 +232,18 @@ tern.route.link(function(req, cx)
 	end
 	-- `e` or the edit chip in a diff block: put the file in that pane's place, at
 	-- the line the diff starts on.
-	local path, line = link.decode_edit(req.url)
+	local path, line, edit_pane = link.decode_edit(req.url)
 	if path then
-		edit_here(cx, req.pane, path, line)
+		edit_here(cx, link_pane(cx, edit_pane, req.pane), path, line)
 		return { handled = true }
 	end
 	-- The ↺ in a file row. Spans can only carry links, so the window hands the
 	-- action back to the block's own `event` with the row it named.
-	local row = link.decode_discard(req.url)
+	local row, row_pane = link.decode_discard(req.url)
 	if row then
-		if req.pane then
-			cx.session:event(req.pane, { ev = "action", act = "discard", value = row })
+		local pane = link_pane(cx, row_pane, req.pane)
+		if pane then
+			cx.session:event(pane, { ev = "action", act = "discard", value = row })
 		end
 		return { handled = true }
 	end

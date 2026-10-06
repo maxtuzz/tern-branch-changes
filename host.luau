@@ -290,7 +290,7 @@ end
 local function open_full(b: Block)
 	local root = b.state.root
 	if root then
-		b.cx:open(link.view_url(root))
+		b.cx:open(link.view_url(root, b.cx.pane))
 	end
 end
 
@@ -388,6 +388,7 @@ local def: BlockDef<model.State> = {
 		local dir = (if type(saved) == "table" then saved.dir else nil) or args[1] or cx.cwd or ""
 		local base = if type(saved) == "table" and type(saved.base) == "string" then saved.base else nil
 		local state = model.new(dir, nil, base)
+		state.pane = cx.pane
 		local b: Block = {
 			state = state,
 			cx = cx,

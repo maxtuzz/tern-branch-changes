@@ -758,6 +758,29 @@ test("the window route opens the file in place of the diff pane", function()
 	eq(#seen.closed, 0, "replacing leaves nothing to close")
 end)
 
+test("a link names its own pane, since a host open arrives without one", function()
+	S.routes = {}
+	__reload("window")
+	local route = S.routes[1]
+	local wcx, seen = edit_cx(true)
+	-- `req.pane` is nil here: this is what a block's own `cx:open` looks like
+	-- when it reaches the window, and it is why the pane rides in the URL.
+	wcx.session.pane = function(_self, id)
+		return if id == 9 then { pane = 9, block = "branch-changes.diff" } else nil
+	end
+	route({ url = link.edit_url("/w/repo/x.lua", 12, 9), pane = nil, mods = {} }, wcx)
+	eq(seen.focused, 9, "the pane from the link is the one acted on")
+	eq(seen.opened.opts.how, "replace")
+	-- A pane this window doesn't show is ignored rather than acted on blindly.
+	local other, unseen = edit_cx(true)
+	other.session.pane = function()
+		return nil
+	end
+	route({ url = link.edit_url("/w/repo/x.lua", nil, 404), pane = nil, mods = {} }, other)
+	eq(unseen.focused, nil)
+	eq(unseen.opened.opts.how, "default")
+end)
+
 test("if focus has not landed, the file opens and the diff pane closes behind it", function()
 	S.routes = {}
 	__reload("window")
@@ -986,7 +1009,7 @@ test("every change row carries a revert link, and no commit file does", function
 	end)
 	local glyph = row.p.value[1]
 	eq(glyph.t, "↺")
-	eq(glyph.href, link.discard_url("unstaged:lib/util.lua"), "the link names its row")
+	eq(glyph.href, link.discard_url("unstaged:lib/util.lua", 7), "the link names its row and its pane")
 	eq(row.p.icon, "file", "the status icon keeps the left slot")
 	-- A file inside a commit is history, so it gets no revert control.
 	local move = state.snap.commits[3]

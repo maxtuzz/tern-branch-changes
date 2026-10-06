@@ -24,6 +24,7 @@ export type State = {
 	files: { [string]: CommitFiles }, -- loaded commit file lists, by sha
 	diffs: { [string]: DiffState }, -- open diffs, by row id
 	sel: string?, -- selected row id
+	pane: number?, -- this block's pane, which its links carry back to the window
 	me: string?, -- this repo's user.name, so commits by others stand out
 	armed: string?, -- row id waiting for a second press to discard its changes
 	cost: number?, -- how long `git status` takes here, in ms
@@ -54,6 +55,7 @@ function M.new(dir: string, root: string?, base_pref: string?): State
 		files = {},
 		diffs = {},
 		sel = nil,
+		pane = nil,
 		me = nil,
 		armed = nil,
 		cost = nil,
