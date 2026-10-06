@@ -74,7 +74,10 @@ local function one_line(node: Node): Node
 	return with(node, { max = { h = "1lines" } })
 end
 
--- Right-hand value: "+n −n" then the status letter in its tone, as Source Control panels show it.
+-- Right-hand value: "+n -n" then the status letter in its tone, as Source
+-- Control panels show it. The counts are toned, not marked with the `ins`/`del`
+-- span tokens: those mean "text added/removed in a diff", so `del` strikes the
+-- number through.
 local function value(f: parse.FileEntry, lay: Layout): { Span }
 	local spans: { Span } = {}
 	if f.add == nil and f.del == nil then
@@ -83,10 +86,10 @@ local function value(f: parse.FileEntry, lay: Layout): { Span }
 		end
 	else
 		if (f.add or 0) > 0 then
-			table.insert(spans, ui.span("+" .. tostring(f.add), "ins num"))
+			table.insert(spans, ui.span("+" .. tostring(f.add), "success num"))
 		end
 		if (f.del or 0) > 0 then
-			table.insert(spans, ui.span((if lay.compact then "−" else " −") .. tostring(f.del), "del num"))
+			table.insert(spans, ui.span((if #spans > 0 then " -" else "-") .. tostring(f.del), "error num"))
 		end
 	end
 	table.insert(spans, ui.span((if #spans > 0 then " " else "") .. f.code, "strong " .. (STATUS_TONE[f.code] or "muted")))
@@ -247,11 +250,11 @@ local function header(state: model.State, lay: Layout): { Node }
 	end
 	if snap.total and not (lay.compact and snap.total.files == 0) then
 		local t = snap.total
-		local text = string.format("+%d −%d", t.add, t.del)
+		local text = string.format("+%d -%d", t.add, t.del)
 		if not lay.compact then
 			text = t.files .. (if t.files == 1 then " file  " else " files  ") .. text
 		end
-		table.insert(chips, badge(text, "neutral", "total", string.format("%d file(s), +%d −%d since %s", t.files, t.add, t.del, snap.base or "the merge base")))
+		table.insert(chips, badge(text, "neutral", "total", string.format("%d file(s), +%d -%d since %s", t.files, t.add, t.del, snap.base or "the merge base")))
 	end
 	table.insert(nodes, one_line(with(ui.row(chips), { key = "chips" })))
 

@@ -599,6 +599,45 @@ local function longest_line(node: any): number
 	return most
 end
 
+local function spans_of(node: any, out: { any }?): { any }
+	local acc = out or {}
+	local p = node.p or {}
+	for _, field in { "spans", "head", "label", "detail", "value" } do
+		local list = p[field]
+		if type(list) == "table" then
+			for _, sp in list do
+				if type(sp) == "table" and sp.t then
+					table.insert(acc, sp)
+				end
+			end
+		end
+	end
+	for _, child in node.c or {} do
+		spans_of(child, acc)
+	end
+	return acc
+end
+
+test("change counts are toned, not struck through", function()
+	local def, cx, state = start()
+	local v = def.view(state, cx)
+	local item = find(v.main, function(n)
+		return n.k == "item"
+	end)
+	local plus, minus = item.p.value[1], item.p.value[2]
+	eq(plus.t, "+1")
+	eq(plus.s, "success num", "additions are toned, not `ins` (which underlines)")
+	eq(minus.t, " -1")
+	eq(minus.s, "error num", "deletions are toned, not `del` (which strikes through)")
+	for _, node in { v.main, v.dock } do
+		for _, sp in spans_of(node) do
+			local style = sp.s or ""
+			assert(not string.find(style, "del", 1, true), "no `del` token: " .. sp.t)
+			assert(not string.find(style, "ins", 1, true), "no `ins` token: " .. sp.t)
+		end
+	end
+end)
+
 test("a sidebar-width pane keeps header rows on one line and trims labels", function()
 	local def, cx, state = start()
 	local v = def.view(state, cx)  -- cx.cols is 80 in the stub
